@@ -6,8 +6,8 @@ static GITLAB_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITEA_PATTERN: OnceLock<Regex> = OnceLock::new();
 static RUSTDOC_PATTERN: OnceLock<Regex> = OnceLock::new();
 
-const MAX_ENTIRE_FILE_LINES: usize = 20;
 const SPACES_PER_TAB: &str = "    ";
+const MAX_FILE_CHARS: usize = 1700;
 
 #[derive(Debug, PartialEq)]
 pub enum GitPlatform {
@@ -271,7 +271,7 @@ impl GitFileLink {
                 return None;
             }
 
-            if lines.len() > MAX_ENTIRE_FILE_LINES {
+            if content.len() > MAX_FILE_CHARS {
                 return None;
             }
 

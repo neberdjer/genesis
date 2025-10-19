@@ -3,9 +3,10 @@ mod constants;
 mod git_diff_handler;
 mod git_handler;
 mod handlers;
+mod twitter_handler;
 
 use constants::{DEFAULT_ENVIRONMENT, DEFAULT_PREFIX};
-use handlers::{handle_commit_diffs, handle_diff_pagination, handle_git_links};
+use handlers::{handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_twitter_links};
 use poise::serenity_prelude as serenity;
 use std::env;
 use tracing::{error, info};
@@ -24,6 +25,7 @@ fn event_handler(
             poise::serenity_prelude::FullEvent::Message { new_message } => {
                 handle_commit_diffs(ctx, new_message).await;
                 handle_git_links(ctx, new_message).await;
+                handle_twitter_links(ctx, new_message).await;
             }
             poise::serenity_prelude::FullEvent::InteractionCreate { interaction } => {
                 if let serenity::Interaction::Component(component) = interaction {
