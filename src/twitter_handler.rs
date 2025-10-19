@@ -27,10 +27,17 @@ struct AuthorData {
 struct MediaData {
     #[serde(default)]
     photos: Vec<PhotoItem>,
+    #[serde(default)]
+    videos: Vec<VideoItem>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PhotoItem {
+    url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct VideoItem {
     url: String,
 }
 
@@ -67,7 +74,11 @@ impl TwitterPost {
 
         let images = tweet
             .media
-            .and_then(|m| Some(m.photos.into_iter().map(|p| p.url).collect()))
+            .map(|m| {
+                let mut all_media = m.photos.into_iter().map(|p| p.url).collect::<Vec<_>>();
+                all_media.extend(m.videos.into_iter().map(|v| v.url));
+                all_media
+            })
             .unwrap_or_default();
 
         Ok(Self {
