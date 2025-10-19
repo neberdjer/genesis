@@ -11,6 +11,7 @@ pub fn is_git_platform_url(word: &str) -> bool {
         || word.contains("/-/blob/")
         || word.contains("/src/branch/")
         || word.contains("/src/commit/")
+        || (word.contains("/src/") && word.contains(".rs.html"))
 }
 
 pub fn clean_url(url: &str) -> &str {
@@ -29,7 +30,10 @@ async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
         )
         .await
     {
-        warn!("Failed to suppress embed: {}", e);
+        warn!(
+            "Failed to suppress embed in channel {} (needs Manage Messages permission): {}",
+            msg.channel_id, e
+        );
     }
 }
 
@@ -47,7 +51,16 @@ async fn send_code_snippet(
         )
     };
 
-    if let Err(e) = msg.channel_id.say(&ctx.http, content).await {
+    if let Err(e) = msg
+        .channel_id
+        .send_message(
+            &ctx.http,
+            serenity::CreateMessage::new()
+                .content(content)
+                .reference_message(msg),
+        )
+        .await
+    {
         error!("Failed to send message: {}", e);
     }
 }

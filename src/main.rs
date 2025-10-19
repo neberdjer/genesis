@@ -1,10 +1,11 @@
 mod commands;
 mod constants;
+mod git_diff_handler;
 mod git_handler;
 mod handlers;
 
 use constants::{DEFAULT_ENVIRONMENT, DEFAULT_PREFIX};
-use handlers::handle_git_links;
+use handlers::{handle_commit_diffs, handle_diff_pagination, handle_git_links};
 use poise::serenity_prelude as serenity;
 use std::env;
 use tracing::{error, info};
@@ -19,8 +20,17 @@ fn event_handler(
     _data: &(),
 ) -> impl std::future::Future<Output = Result<(), Error>> + Send {
     async move {
-        if let poise::serenity_prelude::FullEvent::Message { new_message } = event {
-            handle_git_links(ctx, new_message).await;
+        match event {
+            poise::serenity_prelude::FullEvent::Message { new_message } => {
+                handle_commit_diffs(ctx, new_message).await;
+                handle_git_links(ctx, new_message).await;
+            }
+            poise::serenity_prelude::FullEvent::InteractionCreate { interaction } => {
+                if let serenity::Interaction::Component(component) = interaction {
+                    handle_diff_pagination(ctx, component).await;
+                }
+            }
+            _ => {}
         }
         Ok(())
     }

@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 static GITHUB_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITLAB_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITEA_PATTERN: OnceLock<Regex> = OnceLock::new();
+static RUSTDOC_PATTERN: OnceLock<Regex> = OnceLock::new();
 
 const MAX_ENTIRE_FILE_LINES: usize = 20;
 const SPACES_PER_TAB: &str = "    ";
@@ -13,6 +14,7 @@ pub enum GitPlatform {
     GitHub,
     GitLab,
     Gitea,
+    RustDoc,
 }
 
 pub struct GitFileLink {
@@ -28,7 +30,8 @@ pub struct GitFileLink {
 
 impl GitFileLink {
     pub fn parse(url: &str) -> Option<Self> {
-        Self::parse_github(url)
+        Self::parse_rustdoc(url)
+            .or_else(|| Self::parse_github(url))
             .or_else(|| Self::parse_gitlab(url))
             .or_else(|| Self::parse_gitea(url))
     }
@@ -94,6 +97,34 @@ impl GitFileLink {
         })
     }
 
+    fn parse_rustdoc(url: &str) -> Option<Self> {
+        let pattern = RUSTDOC_PATTERN.get_or_init(|| {
+            Regex::new(r"https?://([^/]+)/([^/]+)/([^/]+)/src/([^/]+)/([^#]+\.rs)\.html(?:#(\d+)(?:-(\d+))?)?")
+                .unwrap()
+        });
+
+        let captures = pattern.captures(url)?;
+        let host = captures.get(1)?.as_str();
+        let project = captures.get(2)?.as_str();
+        let version = captures.get(3)?.as_str();
+        let crate_name = captures.get(4)?.as_str();
+        let file_path = captures.get(5)?.as_str();
+        let start_line = captures.get(6).and_then(|m| m.as_str().parse().ok());
+        let end_line = captures.get(7).and_then(|m| m.as_str().parse().ok());
+
+        let raw_url = format!("https://{}/{}/{}/src/{}/{}", host, project, version, crate_name, file_path);
+        let file_name = file_path.split('/').last().unwrap_or(file_path);
+
+        Some(Self {
+            platform: GitPlatform::RustDoc,
+            original_url: url.to_string(),
+            raw_url,
+            file_name: file_name.to_string(),
+            start_line,
+            end_line,
+        })
+    }
+
     fn parse_gitea(url: &str) -> Option<Self> {
         let pattern = GITEA_PATTERN.get_or_init(|| {
             Regex::new(r"https?://(.+?)/([^/]+)/([^/]+)/src/(?:branch|commit)/([^/]+)/([^#?]+)(?:\?[^#]*)?(?:#L(\d+)(?:-L?(\d+))?)?")
@@ -127,7 +158,50 @@ impl GitFileLink {
 
     pub fn fetch_content(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let response = ureq::get(&self.raw_url).call()?;
-        Ok(response.into_string()?)
+        let content = response.into_string()?;
+
+        if self.platform == GitPlatform::RustDoc {
+            Ok(Self::strip_html(&content))
+        } else {
+            Ok(content)
+        }
+    }
+
+    fn strip_html(html: &str) -> String {
+        let lines: Vec<String> = html.lines().map(|line| {
+            let mut result = String::new();
+            let mut in_tag = false;
+            let mut chars = line.chars().peekable();
+
+            while let Some(ch) = chars.next() {
+                if ch == '<' {
+                    in_tag = true;
+                } else if ch == '>' {
+                    in_tag = false;
+                } else if !in_tag {
+                    if ch == '&' {
+                        let entity: String = chars.by_ref().take_while(|&c| c != ';').collect();
+                        match entity.as_str() {
+                            "lt" => result.push('<'),
+                            "gt" => result.push('>'),
+                            "amp" => result.push('&'),
+                            "quot" => result.push('"'),
+                            "apos" | "#39" => result.push('\''),
+                            _ => {
+                                result.push('&');
+                                result.push_str(&entity);
+                                result.push(';');
+                            }
+                        }
+                    } else {
+                        result.push(ch);
+                    }
+                }
+            }
+            result
+        }).collect();
+
+        lines.join("\n")
     }
 
     fn get_extension(&self) -> &str {
