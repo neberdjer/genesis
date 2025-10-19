@@ -1,11 +1,75 @@
 use crate::constants::{DISCORD_MESSAGE_LIMIT, EMBED_SUPPRESS_DELAY_MS, FILES_PER_PAGE};
-use crate::git_diff_handler::GitHubCommitDiff;
+use crate::git_diff_handler::CommitDiff;
 use poise::serenity_prelude as serenity;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tracing::{error, warn};
+
+static DIFF_CACHE: OnceLock<Mutex<HashMap<String, CachedDiff>>> = OnceLock::new();
+
+struct CachedDiff {
+    responses: Vec<String>,
+    timestamp: Instant,
+}
+
+impl CachedDiff {
+    fn new(responses: Vec<String>) -> Self {
+        Self {
+            responses,
+            timestamp: Instant::now(),
+        }
+    }
+
+    fn is_expired(&self) -> bool {
+        self.timestamp.elapsed().as_secs() > 600
+    }
+}
+
+fn get_cache_key(commit: &CommitDiff) -> String {
+    let base = match &commit.host {
+        Some(host) => format!("{}:{}:{}:{}", host, commit.owner, commit.repo, commit.commit),
+        None => format!("github.com:{}:{}:{}", commit.owner, commit.repo, commit.commit),
+    };
+
+    match &commit.file_filter {
+        Some(filter) => format!("{}:{}", base, filter),
+        None => base,
+    }
+}
+
+fn get_cached_responses(commit: &CommitDiff) -> Option<Vec<String>> {
+    let cache = DIFF_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache = cache.lock().ok()?;
+    let key = get_cache_key(commit);
+
+    if let Some(cached) = cache.get(&key) {
+        if !cached.is_expired() {
+            return Some(cached.responses.clone());
+        }
+        cache.remove(&key);
+    }
+    None
+}
+
+fn cache_responses(commit: &CommitDiff, responses: Vec<String>) {
+    let cache = DIFF_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut cache) = cache.lock() {
+        let key = get_cache_key(commit);
+        cache.insert(key, CachedDiff::new(responses));
+    }
+}
+
+pub fn is_commit_url(word: &str) -> bool {
+    is_github_commit_url(word) || is_gitlab_commit_url(word)
+}
 
 pub fn is_github_commit_url(word: &str) -> bool {
     word.contains("github.com") && word.contains("/commit/")
+}
+
+pub fn is_gitlab_commit_url(word: &str) -> bool {
+    word.contains("/-/commit/")
 }
 
 pub fn clean_url(url: &str) -> &str {
@@ -34,13 +98,22 @@ async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
 fn create_pagination_buttons(
     current_page: usize,
     total_pages: usize,
-    owner: &str,
-    repo: &str,
-    commit_sha: &str,
+    commit: &CommitDiff,
 ) -> serenity::CreateActionRow {
+    let platform_prefix = match commit.platform {
+        crate::git_diff_handler::GitPlatform::GitHub => "gh",
+        crate::git_diff_handler::GitPlatform::GitLab => "gl",
+    };
+
+    let host_part = commit.host.as_deref().unwrap_or("");
+    let separator = if host_part.is_empty() { "" } else { "|" };
+
+    let file_filter_part = commit.file_filter.as_deref().unwrap_or("");
+    let file_separator = if file_filter_part.is_empty() { "" } else { "|" };
+
     let prev_button = serenity::CreateButton::new(format!(
-        "diff_prev_{}_{}_{}_{}",
-        owner, repo, commit_sha, current_page
+        "diff_prev_{}{}{}_{}_{}_{}{}{}_{}",
+        platform_prefix, separator, host_part, commit.owner, commit.repo, commit.commit, file_separator, file_filter_part, current_page
     ))
     .label("Previous")
     .style(serenity::ButtonStyle::Primary)
@@ -52,8 +125,8 @@ fn create_pagination_buttons(
         .disabled(true);
 
     let next_button = serenity::CreateButton::new(format!(
-        "diff_next_{}_{}_{}_{}",
-        owner, repo, commit_sha, current_page
+        "diff_next_{}{}{}_{}_{}_{}{}{}_{}",
+        platform_prefix, separator, host_part, commit.owner, commit.repo, commit.commit, file_separator, file_filter_part, current_page
     ))
     .label("Next")
     .style(serenity::ButtonStyle::Primary)
@@ -65,7 +138,7 @@ fn create_pagination_buttons(
 async fn send_paginated_diff(
     ctx: &serenity::Context,
     msg: &serenity::Message,
-    commit: &GitHubCommitDiff,
+    commit: &CommitDiff,
     responses: Vec<String>,
 ) {
     if responses.is_empty() {
@@ -85,7 +158,7 @@ async fn send_paginated_diff(
         .reference_message(msg);
 
     if total_pages > 1 {
-        let buttons = create_pagination_buttons(0, total_pages, &commit.owner, &commit.repo, &commit.commit);
+        let buttons = create_pagination_buttons(0, total_pages, commit);
         message_builder = message_builder.components(vec![buttons]);
     }
 
@@ -99,12 +172,21 @@ pub async fn handle_commit_diffs(ctx: &serenity::Context, msg: &serenity::Messag
         return;
     }
 
-    let found_commits: Vec<GitHubCommitDiff> = msg
-        .content
-        .split_whitespace()
-        .filter(|word| is_github_commit_url(word))
-        .filter_map(|word| GitHubCommitDiff::parse(clean_url(word)))
-        .collect();
+    let words: Vec<&str> = msg.content.split_whitespace().collect();
+    let mut found_commits: Vec<CommitDiff> = Vec::new();
+
+    for (i, word) in words.iter().enumerate() {
+        if is_commit_url(word) {
+            if let Some(mut commit) = CommitDiff::parse(clean_url(word)) {
+                if let Some(next_word) = words.get(i + 1) {
+                    if looks_like_filename(next_word) {
+                        commit.file_filter = Some(next_word.to_string());
+                    }
+                }
+                found_commits.push(commit);
+            }
+        }
+    }
 
     if found_commits.is_empty() {
         return;
@@ -113,18 +195,32 @@ pub async fn handle_commit_diffs(ctx: &serenity::Context, msg: &serenity::Messag
     suppress_embeds(ctx, msg).await;
 
     for commit in found_commits {
-        match commit.format_diff_response() {
-            Ok(responses) => {
-                let chunked: Vec<String> = responses
-                    .chunks(FILES_PER_PAGE)
-                    .map(|chunk| chunk.join("\n\n"))
-                    .collect();
+        let chunked = if let Some(cached) = get_cached_responses(&commit) {
+            cached
+        } else {
+            match commit.format_diff_response() {
+                Ok(responses) => {
+                    let chunked: Vec<String> = responses
+                        .chunks(FILES_PER_PAGE)
+                        .map(|chunk| chunk.join("\n\n"))
+                        .collect();
 
-                send_paginated_diff(ctx, msg, &commit, chunked).await;
+                    cache_responses(&commit, chunked.clone());
+                    chunked
+                }
+                Err(e) => {
+                    warn!("Failed to fetch commit diff: {}", e);
+                    continue;
+                }
             }
-            Err(e) => warn!("Failed to fetch commit diff: {}", e),
-        }
+        };
+
+        send_paginated_diff(ctx, msg, &commit, chunked).await;
     }
+}
+
+fn looks_like_filename(word: &str) -> bool {
+    word.contains('.') && !word.starts_with("http")
 }
 
 pub async fn handle_diff_pagination(
@@ -143,10 +239,35 @@ pub async fn handle_diff_pagination(
     }
 
     let direction = parts[1];
-    let owner = parts[2];
-    let repo = parts[3];
-    let commit_sha = parts[4];
-    let current_page: usize = parts[5].parse().unwrap_or(0);
+    let platform_and_host = parts[2];
+
+    let (platform, host) = if platform_and_host.starts_with("gh") {
+        (crate::git_diff_handler::GitPlatform::GitHub, None)
+    } else if platform_and_host.starts_with("gl") {
+        if platform_and_host.contains('|') {
+            let host_part = platform_and_host.strip_prefix("gl|").unwrap_or("");
+            (crate::git_diff_handler::GitPlatform::GitLab, Some(host_part.to_string()))
+        } else {
+            (crate::git_diff_handler::GitPlatform::GitLab, Some("gitlab.com".to_string()))
+        }
+    } else {
+        return;
+    };
+
+    let owner = parts[3];
+    let repo = parts[4];
+
+    let commit_and_filter = parts[5];
+    let (commit_sha, file_filter) = if commit_and_filter.contains('|') {
+        let mut split = commit_and_filter.splitn(2, '|');
+        let commit = split.next().unwrap_or("");
+        let filter = split.next().map(|s| s.to_string());
+        (commit, filter)
+    } else {
+        (commit_and_filter, None)
+    };
+
+    let current_page: usize = parts[6].parse().unwrap_or(0);
 
     let new_page = match direction {
         "prev" => current_page.saturating_sub(1),
@@ -154,41 +275,52 @@ pub async fn handle_diff_pagination(
         _ => return,
     };
 
-    let commit = GitHubCommitDiff {
+    let commit = CommitDiff {
+        platform,
         owner: owner.to_string(),
         repo: repo.to_string(),
         commit: commit_sha.to_string(),
         diff_hash: None,
+        host,
+        file_filter,
     };
 
-    match commit.format_diff_response() {
-        Ok(responses) => {
-            let chunked: Vec<String> = responses
-                .chunks(FILES_PER_PAGE)
-                .map(|chunk| chunk.join("\n\n"))
-                .collect();
+    let chunked = if let Some(cached) = get_cached_responses(&commit) {
+        cached
+    } else {
+        match commit.format_diff_response() {
+            Ok(responses) => {
+                let chunked: Vec<String> = responses
+                    .chunks(FILES_PER_PAGE)
+                    .map(|chunk| chunk.join("\n\n"))
+                    .collect();
 
-            if new_page >= chunked.len() {
+                cache_responses(&commit, chunked.clone());
+                chunked
+            }
+            Err(e) => {
+                warn!("Failed to fetch commit diff for pagination: {}", e);
                 return;
             }
-
-            let page_content = &chunked[new_page];
-            let total_pages = chunked.len();
-
-            let buttons = create_pagination_buttons(new_page, total_pages, owner, repo, commit_sha);
-
-            let response = serenity::CreateInteractionResponse::UpdateMessage(
-                serenity::CreateInteractionResponseMessage::new()
-                    .content(page_content)
-                    .components(vec![buttons]),
-            );
-
-            if let Err(e) = interaction.create_response(&ctx.http, response).await {
-                error!("Failed to update message: {}", e);
-            }
         }
-        Err(e) => {
-            warn!("Failed to fetch commit diff for pagination: {}", e);
-        }
+    };
+
+    if new_page >= chunked.len() {
+        return;
+    }
+
+    let page_content = &chunked[new_page];
+    let total_pages = chunked.len();
+
+    let buttons = create_pagination_buttons(new_page, total_pages, &commit);
+
+    let response = serenity::CreateInteractionResponse::UpdateMessage(
+        serenity::CreateInteractionResponseMessage::new()
+            .content(page_content)
+            .components(vec![buttons]),
+    );
+
+    if let Err(e) = interaction.create_response(&ctx.http, response).await {
+        error!("Failed to update message: {}", e);
     }
 }

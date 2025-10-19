@@ -68,22 +68,21 @@ impl GitFileLink {
 
     fn parse_gitlab(url: &str) -> Option<Self> {
         let pattern = GITLAB_PATTERN.get_or_init(|| {
-            Regex::new(r"https?://(.+?)/([^/]+)/([^/]+)/-/blob/([^/]+)/([^#?]+)(?:\?[^#]*)?(?:#L(\d+)(?:-L?(\d+))?)?")
+            Regex::new(r"https?://([^/]+)/(.+?)/-/blob/([^/]+)/([^#?]+)(?:\?[^#]*)?(?:#L(\d+)(?:-L?(\d+))?)?")
                 .unwrap()
         });
 
         let captures = pattern.captures(url)?;
         let host = captures.get(1)?.as_str();
-        let owner = captures.get(2)?.as_str();
-        let repo = captures.get(3)?.as_str();
-        let commit = captures.get(4)?.as_str();
-        let path = captures.get(5)?.as_str();
-        let start_line = captures.get(6).and_then(|m| m.as_str().parse().ok());
-        let end_line = captures.get(7).and_then(|m| m.as_str().parse().ok());
+        let full_path = captures.get(2)?.as_str();
+        let commit = captures.get(3)?.as_str();
+        let path = captures.get(4)?.as_str();
+        let start_line = captures.get(5).and_then(|m| m.as_str().parse().ok());
+        let end_line = captures.get(6).and_then(|m| m.as_str().parse().ok());
 
         let raw_url = format!(
-            "https://{}/{}/{}/-/raw/{}/{}",
-            host, owner, repo, commit, path
+            "https://{}/{}/-/raw/{}/{}",
+            host, full_path, commit, path
         );
         let file_name = path.split('/').last().unwrap_or(path).to_string();
 
