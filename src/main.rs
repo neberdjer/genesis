@@ -17,12 +17,9 @@ async fn main() -> Result<(), Error> {
     let token = env::var("DISCORD_TOKEN").expect("Expected DISCORD_TOKEN in environment");
     let prefix = env::var("PREFIX").unwrap_or_else(|_| "!".to_string());
 
-    let framework = poise::Framework::builder()
+    let framework = poise::Framework::<(), Error>::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![
-                commands::general::ping(),
-                commands::moderation::ban(),
-            ],
+            commands: commands::all_commands(),
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some(prefix.clone().into()),
                 ..Default::default()

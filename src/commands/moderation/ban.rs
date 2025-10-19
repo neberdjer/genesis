@@ -21,6 +21,12 @@ pub async fn ban(
         return Ok(());
     }
 
+    // check if trying to ban the bot
+    if user.id == ctx.framework().bot_id {
+        ctx.say("I cannot ban myself").await?;
+        return Ok(());
+    }
+
     // check if target user can be banned (role hierarchy check)
     if let Ok(target_member) = guild_id.member(ctx, user.id).await {
         let author_member = guild_id.member(ctx, ctx.author().id).await?;
