@@ -1,10 +1,15 @@
 use crate::constants::{DISCORD_MESSAGE_LIMIT, EMBED_SUPPRESS_DELAY_MS, FILES_PER_PAGE};
-use crate::git_diff_handler::CommitDiff;
+use super::git_diff_handler::CommitDiff;
 use poise::serenity_prelude as serenity;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tracing::{error, warn};
+
+#[cfg(feature = "database")]
+use crate::db;
+#[cfg(feature = "database")]
+use sqlx::PgPool;
 
 static DIFF_CACHE: OnceLock<Mutex<HashMap<String, CachedDiff>>> = OnceLock::new();
 
@@ -101,8 +106,8 @@ fn create_pagination_buttons(
     commit: &CommitDiff,
 ) -> serenity::CreateActionRow {
     let platform_prefix = match commit.platform {
-        crate::git_diff_handler::GitPlatform::GitHub => "gh",
-        crate::git_diff_handler::GitPlatform::GitLab => "gl",
+        super::git_diff_handler::GitPlatform::GitHub => "gh",
+        super::git_diff_handler::GitPlatform::GitLab => "gl",
     };
 
     let host_part = commit.host.as_deref().unwrap_or("");
@@ -167,10 +172,39 @@ async fn send_paginated_diff(
     }
 }
 
+#[cfg(feature = "database")]
+pub async fn handle_commit_diffs(
+    ctx: &serenity::Context,
+    msg: &serenity::Message,
+    pool: Option<&PgPool>,
+) {
+    if msg.author.bot {
+        return;
+    }
+
+    if let Some(pool) = pool {
+        if let Some(guild_id) = msg.guild_id {
+            match db::get_server_settings(pool, &guild_id.to_string()).await {
+                Ok(settings) if !settings.git_diffs_enabled => return,
+                Err(e) => warn!("Failed to fetch server settings: {}", e),
+                _ => {}
+            }
+        }
+    }
+
+    handle_commit_diffs_impl(ctx, msg).await;
+}
+
+#[cfg(not(feature = "database"))]
 pub async fn handle_commit_diffs(ctx: &serenity::Context, msg: &serenity::Message) {
     if msg.author.bot {
         return;
     }
+
+    handle_commit_diffs_impl(ctx, msg).await;
+}
+
+async fn handle_commit_diffs_impl(ctx: &serenity::Context, msg: &serenity::Message) {
 
     let words: Vec<&str> = msg.content.split_whitespace().collect();
     let mut found_commits: Vec<CommitDiff> = Vec::new();
@@ -242,13 +276,13 @@ pub async fn handle_diff_pagination(
     let platform_and_host = parts[2];
 
     let (platform, host) = if platform_and_host.starts_with("gh") {
-        (crate::git_diff_handler::GitPlatform::GitHub, None)
+        (super::git_diff_handler::GitPlatform::GitHub, None)
     } else if platform_and_host.starts_with("gl") {
         if platform_and_host.contains('|') {
             let host_part = platform_and_host.strip_prefix("gl|").unwrap_or("");
-            (crate::git_diff_handler::GitPlatform::GitLab, Some(host_part.to_string()))
+            (super::git_diff_handler::GitPlatform::GitLab, Some(host_part.to_string()))
         } else {
-            (crate::git_diff_handler::GitPlatform::GitLab, Some("gitlab.com".to_string()))
+            (super::git_diff_handler::GitPlatform::GitLab, Some("gitlab.com".to_string()))
         }
     } else {
         return;

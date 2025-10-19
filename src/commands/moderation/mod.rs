@@ -4,6 +4,8 @@ pub mod kick;
 pub use ban::ban;
 pub use kick::kick;
 
-pub fn commands() -> Vec<poise::Command<(), crate::Error>> {
+use crate::Data;
+
+pub fn commands() -> Vec<poise::Command<Data, crate::Error>> {
     vec![ban(), kick()]
 }

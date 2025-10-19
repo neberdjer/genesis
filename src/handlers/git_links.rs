@@ -1,10 +1,15 @@
 use crate::constants::{
     DISCORD_MESSAGE_LIMIT, EMBED_SUPPRESS_DELAY_MS, TRUNCATED_MESSAGE_LIMIT,
 };
-use crate::git_handler::GitFileLink;
+use super::git_handler::GitFileLink;
 use poise::serenity_prelude as serenity;
 use std::time::Duration;
 use tracing::{error, warn};
+
+#[cfg(feature = "database")]
+use crate::db;
+#[cfg(feature = "database")]
+use sqlx::PgPool;
 
 pub fn is_git_platform_url(word: &str) -> bool {
     (word.contains("github.com") && word.contains("/blob/"))
@@ -65,10 +70,39 @@ async fn send_code_snippet(
     }
 }
 
+#[cfg(feature = "database")]
+pub async fn handle_git_links(
+    ctx: &serenity::Context,
+    msg: &serenity::Message,
+    pool: Option<&PgPool>,
+) {
+    if msg.author.bot {
+        return;
+    }
+
+    if let Some(pool) = pool {
+        if let Some(guild_id) = msg.guild_id {
+            match db::get_server_settings(pool, &guild_id.to_string()).await {
+                Ok(settings) if !settings.git_links_enabled => return,
+                Err(e) => warn!("Failed to fetch server settings: {}", e),
+                _ => {}
+            }
+        }
+    }
+
+    handle_git_links_impl(ctx, msg).await;
+}
+
+#[cfg(not(feature = "database"))]
 pub async fn handle_git_links(ctx: &serenity::Context, msg: &serenity::Message) {
     if msg.author.bot {
         return;
     }
+
+    handle_git_links_impl(ctx, msg).await;
+}
+
+async fn handle_git_links_impl(ctx: &serenity::Context, msg: &serenity::Message) {
 
     let found_links: Vec<GitFileLink> = msg
         .content

@@ -1,8 +1,13 @@
-use crate::twitter_handler::TwitterPost;
+use super::twitter_handler::TwitterPost;
 use poise::serenity_prelude as serenity;
 use serde_json::json;
 use std::time::Duration;
 use tracing::warn;
+
+#[cfg(feature = "database")]
+use crate::db;
+#[cfg(feature = "database")]
+use sqlx::PgPool;
 
 const EMBED_SUPPRESS_DELAY_MS: u64 = 500;
 
@@ -33,10 +38,39 @@ async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
     }
 }
 
+#[cfg(feature = "database")]
+pub async fn handle_twitter_links(
+    ctx: &serenity::Context,
+    msg: &serenity::Message,
+    pool: Option<&PgPool>,
+) {
+    if msg.author.bot {
+        return;
+    }
+
+    if let Some(pool) = pool {
+        if let Some(guild_id) = msg.guild_id {
+            match db::get_server_settings(pool, &guild_id.to_string()).await {
+                Ok(settings) if !settings.twitter_enabled => return,
+                Err(e) => warn!("Failed to fetch server settings: {}", e),
+                _ => {}
+            }
+        }
+    }
+
+    handle_twitter_links_impl(ctx, msg).await;
+}
+
+#[cfg(not(feature = "database"))]
 pub async fn handle_twitter_links(ctx: &serenity::Context, msg: &serenity::Message) {
     if msg.author.bot {
         return;
     }
+
+    handle_twitter_links_impl(ctx, msg).await;
+}
+
+async fn handle_twitter_links_impl(ctx: &serenity::Context, msg: &serenity::Message) {
 
     let found_tweets: Vec<(String, String)> = msg
         .content

@@ -1,3 +1,7 @@
+mod git_diff_handler;
+mod git_handler;
+mod twitter_handler;
+
 pub mod git_diffs;
 pub mod git_links;
 pub mod twitter;
