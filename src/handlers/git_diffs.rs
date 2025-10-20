@@ -70,15 +70,18 @@ pub fn is_commit_url(word: &str) -> bool {
 }
 
 pub fn is_github_commit_url(word: &str) -> bool {
-    word.contains("github.com") && word.contains("/commit/")
+    word.contains("github.com") && (word.contains("/commit/") || word.contains("/compare/"))
 }
 
 pub fn is_gitlab_commit_url(word: &str) -> bool {
-    word.contains("/-/commit/")
+    word.contains("/-/commit/") || word.contains("/-/compare/")
 }
 
 pub fn clean_url(url: &str) -> &str {
-    url.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
+    url.split('?')
+        .next()
+        .unwrap_or(url)
+        .trim_end_matches(|c: char| matches!(c, ',' | ')' | ']' | '}' | ';'))
 }
 
 async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
@@ -182,17 +185,22 @@ pub async fn handle_commit_diffs(
         return;
     }
 
+    let mut settings = None;
     if let Some(pool) = pool {
         if let Some(guild_id) = msg.guild_id {
             match db::get_server_settings(pool, &guild_id.to_string()).await {
-                Ok(settings) if !settings.git_diffs_enabled => return,
+                Ok(s) => {
+                    if !s.git_diffs_enabled {
+                        return;
+                    }
+                    settings = Some(s);
+                }
                 Err(e) => warn!("Failed to fetch server settings: {}", e),
-                _ => {}
             }
         }
     }
 
-    handle_commit_diffs_impl(ctx, msg).await;
+    handle_commit_diffs_impl(ctx, msg, settings.as_ref()).await;
 }
 
 #[cfg(not(feature = "database"))]
@@ -201,29 +209,71 @@ pub async fn handle_commit_diffs(ctx: &serenity::Context, msg: &serenity::Messag
         return;
     }
 
-    handle_commit_diffs_impl(ctx, msg).await;
+    handle_commit_diffs_impl(ctx, msg, None).await;
 }
 
-async fn handle_commit_diffs_impl(ctx: &serenity::Context, msg: &serenity::Message) {
+async fn handle_commit_diffs_impl(ctx: &serenity::Context, msg: &serenity::Message, settings: Option<&db::ServerSettings>) {
 
     let words: Vec<&str> = msg.content.split_whitespace().collect();
+
+    if words.is_empty() {
+        return;
+    }
+
+    let commit_url_indices: Vec<usize> = words
+        .iter()
+        .enumerate()
+        .filter(|(_, word)| is_commit_url(word))
+        .map(|(i, _)| i)
+        .collect();
+
+    if commit_url_indices.is_empty() {
+        return;
+    }
+
+    let mut has_non_link_non_filename = false;
+    for (i, word) in words.iter().enumerate() {
+        if commit_url_indices.contains(&i) {
+            continue;
+        }
+
+        if i > 0 && commit_url_indices.contains(&(i - 1)) && looks_like_filename(word) {
+            continue;
+        }
+
+        has_non_link_non_filename = true;
+        break;
+    }
+
+    if has_non_link_non_filename {
+        return;
+    }
+
     let mut found_commits: Vec<CommitDiff> = Vec::new();
 
-    for (i, word) in words.iter().enumerate() {
-        if is_commit_url(word) {
-            if let Some(mut commit) = CommitDiff::parse(clean_url(word)) {
-                if let Some(next_word) = words.get(i + 1) {
-                    if looks_like_filename(next_word) {
-                        commit.file_filter = Some(next_word.to_string());
-                    }
+    for &idx in &commit_url_indices {
+        if let Some(mut commit) = CommitDiff::parse(clean_url(words[idx])) {
+            if let Some(&next_word) = words.get(idx + 1) {
+                if looks_like_filename(next_word) && (idx + 1 == words.len() || commit_url_indices.contains(&(idx + 2))) {
+                    commit.file_filter = Some(next_word.to_string());
                 }
-                found_commits.push(commit);
             }
+            found_commits.push(commit);
         }
     }
 
     if found_commits.is_empty() {
         return;
+    }
+
+    #[cfg(feature = "database")]
+    if let Some(settings) = settings {
+        if !settings.git_compares_enabled {
+            found_commits.retain(|commit| !commit.is_compare);
+            if found_commits.is_empty() {
+                return;
+            }
+        }
     }
 
     suppress_embeds(ctx, msg).await;
@@ -317,6 +367,7 @@ pub async fn handle_diff_pagination(
         diff_hash: None,
         host,
         file_filter,
+        is_compare: false,
     };
 
     let chunked = if let Some(cached) = get_cached_responses(&commit) {

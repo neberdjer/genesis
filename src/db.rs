@@ -15,6 +15,7 @@ pub struct ServerSettings {
     #[allow(dead_code)]
     pub guild_id: String,
     pub git_diffs_enabled: bool,
+    pub git_compares_enabled: bool,
     pub git_links_enabled: bool,
     pub twitter_enabled: bool,
 }
@@ -141,7 +142,7 @@ async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
 pub async fn get_server_settings(pool: &PgPool, guild_id: &str) -> Result<ServerSettings, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        SELECT guild_id, git_diffs_enabled, git_links_enabled, twitter_enabled
+        SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled
         FROM server_settings
         WHERE guild_id = $1
         "#,
@@ -154,6 +155,7 @@ pub async fn get_server_settings(pool: &PgPool, guild_id: &str) -> Result<Server
         Ok(ServerSettings {
             guild_id: row.try_get("guild_id")?,
             git_diffs_enabled: row.try_get("git_diffs_enabled")?,
+            git_compares_enabled: row.try_get("git_compares_enabled")?,
             git_links_enabled: row.try_get("git_links_enabled")?,
             twitter_enabled: row.try_get("twitter_enabled")?,
         })
@@ -161,6 +163,7 @@ pub async fn get_server_settings(pool: &PgPool, guild_id: &str) -> Result<Server
         Ok(ServerSettings {
             guild_id: guild_id.to_string(),
             git_diffs_enabled: true,
+            git_compares_enabled: true,
             git_links_enabled: true,
             twitter_enabled: true,
         })
@@ -182,6 +185,18 @@ pub async fn update_server_setting(
                 VALUES ($1, $2)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET git_diffs_enabled = $2, updated_at = NOW()
+                "#,
+            )
+            .bind(guild_id)
+            .bind(enabled)
+        }
+        "git_compares" => {
+            sqlx::query(
+                r#"
+                INSERT INTO server_settings (guild_id, git_compares_enabled)
+                VALUES ($1, $2)
+                ON CONFLICT (guild_id)
+                DO UPDATE SET git_compares_enabled = $2, updated_at = NOW()
                 "#,
             )
             .bind(guild_id)
