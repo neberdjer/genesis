@@ -1,5 +1,5 @@
 #[cfg(feature = "database")]
-use sqlx::{postgres::PgPoolOptions, PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 #[cfg(feature = "database")]
 use std::fs;
 #[cfg(feature = "database")]
@@ -139,7 +139,10 @@ async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
 }
 
 #[cfg(feature = "database")]
-pub async fn get_server_settings(pool: &PgPool, guild_id: &str) -> Result<ServerSettings, sqlx::Error> {
+pub async fn get_server_settings(
+    pool: &PgPool,
+    guild_id: &str,
+) -> Result<ServerSettings, sqlx::Error> {
     let result = sqlx::query(
         r#"
         SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled
@@ -178,57 +181,154 @@ pub async fn update_server_setting(
     enabled: bool,
 ) -> Result<(), sqlx::Error> {
     let query = match setting {
-        "git_diffs" => {
-            sqlx::query(
-                r#"
+        "git_diffs" => sqlx::query(
+            r#"
                 INSERT INTO server_settings (guild_id, git_diffs_enabled)
                 VALUES ($1, $2)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET git_diffs_enabled = $2, updated_at = NOW()
                 "#,
-            )
-            .bind(guild_id)
-            .bind(enabled)
-        }
-        "git_compares" => {
-            sqlx::query(
-                r#"
+        )
+        .bind(guild_id)
+        .bind(enabled),
+        "git_compares" => sqlx::query(
+            r#"
                 INSERT INTO server_settings (guild_id, git_compares_enabled)
                 VALUES ($1, $2)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET git_compares_enabled = $2, updated_at = NOW()
                 "#,
-            )
-            .bind(guild_id)
-            .bind(enabled)
-        }
-        "git_links" => {
-            sqlx::query(
-                r#"
+        )
+        .bind(guild_id)
+        .bind(enabled),
+        "git_links" => sqlx::query(
+            r#"
                 INSERT INTO server_settings (guild_id, git_links_enabled)
                 VALUES ($1, $2)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET git_links_enabled = $2, updated_at = NOW()
                 "#,
-            )
-            .bind(guild_id)
-            .bind(enabled)
-        }
-        "twitter" => {
-            sqlx::query(
-                r#"
+        )
+        .bind(guild_id)
+        .bind(enabled),
+        "twitter" => sqlx::query(
+            r#"
                 INSERT INTO server_settings (guild_id, twitter_enabled)
                 VALUES ($1, $2)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET twitter_enabled = $2, updated_at = NOW()
                 "#,
-            )
-            .bind(guild_id)
-            .bind(enabled)
-        }
+        )
+        .bind(guild_id)
+        .bind(enabled),
         _ => return Err(sqlx::Error::RowNotFound),
     };
 
     query.execute(pool).await?;
     Ok(())
+}
+
+#[cfg(feature = "database")]
+pub async fn is_user_blacklisted(pool: &PgPool, user_id: &str) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(SELECT 1 FROM user_blacklist WHERE user_id = $1)
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(result)
+}
+
+#[cfg(feature = "database")]
+pub async fn add_user_to_blacklist(
+    pool: &PgPool,
+    user_id: &str,
+    reason: Option<&str>,
+    blacklisted_by: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO user_blacklist (user_id, reason, blacklisted_by)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (user_id) DO NOTHING
+        "#,
+    )
+    .bind(user_id)
+    .bind(reason)
+    .bind(blacklisted_by)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "database")]
+pub async fn remove_user_from_blacklist(pool: &PgPool, user_id: &str) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM user_blacklist WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+#[cfg(feature = "database")]
+pub async fn is_server_blacklisted(pool: &PgPool, guild_id: &str) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(SELECT 1 FROM server_blacklist WHERE guild_id = $1)
+        "#,
+    )
+    .bind(guild_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(result)
+}
+
+#[cfg(feature = "database")]
+pub async fn add_server_to_blacklist(
+    pool: &PgPool,
+    guild_id: &str,
+    reason: Option<&str>,
+    blacklisted_by: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_blacklist (guild_id, reason, blacklisted_by)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (guild_id) DO NOTHING
+        "#,
+    )
+    .bind(guild_id)
+    .bind(reason)
+    .bind(blacklisted_by)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+#[cfg(feature = "database")]
+pub async fn remove_server_from_blacklist(
+    pool: &PgPool,
+    guild_id: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM server_blacklist WHERE guild_id = $1
+        "#,
+    )
+    .bind(guild_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
 }

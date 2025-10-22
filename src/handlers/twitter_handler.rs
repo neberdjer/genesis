@@ -62,7 +62,10 @@ impl TwitterPost {
         Some((username, tweet_id))
     }
 
-    pub fn fetch(username: &str, tweet_id: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn fetch(
+        username: &str,
+        tweet_id: &str,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let api_url = format!("https://api.fxtwitter.com/{}/status/{}", username, tweet_id);
 
         let response = ureq::get(&api_url)
@@ -89,4 +92,3 @@ impl TwitterPost {
         })
     }
 }
-

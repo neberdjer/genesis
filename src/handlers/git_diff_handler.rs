@@ -1,7 +1,7 @@
 use crate::constants::MAX_DIFF_CHARS_PER_FILE;
 use regex::Regex;
-use std::sync::OnceLock;
 use serde_json;
+use std::sync::OnceLock;
 
 static GITHUB_COMMIT_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITHUB_COMPARE_PATTERN: OnceLock<Regex> = OnceLock::new();
@@ -68,8 +68,7 @@ impl CommitDiff {
 
     fn parse_github_compare(url: &str) -> Option<Self> {
         let pattern = GITHUB_COMPARE_PATTERN.get_or_init(|| {
-            Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/compare/(.+)")
-                .unwrap()
+            Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/compare/(.+)").unwrap()
         });
 
         let captures = pattern.captures(url)?;
@@ -122,10 +121,8 @@ impl CommitDiff {
     }
 
     fn parse_gitlab_compare(url: &str) -> Option<Self> {
-        let pattern = GITLAB_COMPARE_PATTERN.get_or_init(|| {
-            Regex::new(r"https?://([^/]+)/(.+?)/-/compare/([^?]+)")
-                .unwrap()
-        });
+        let pattern = GITLAB_COMPARE_PATTERN
+            .get_or_init(|| Regex::new(r"https?://([^/]+)/(.+?)/-/compare/([^?]+)").unwrap());
 
         let captures = pattern.captures(url)?;
         let host = captures.get(1)?.as_str().to_string();
@@ -212,8 +209,14 @@ impl CommitDiff {
                 let mut full_diff = String::new();
 
                 for diff_obj in diffs_array {
-                    let old_path = diff_obj.get("old_path").and_then(|v| v.as_str()).unwrap_or("unknown");
-                    let new_path = diff_obj.get("new_path").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let old_path = diff_obj
+                        .get("old_path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let new_path = diff_obj
+                        .get("new_path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
                     let diff_content = diff_obj.get("diff").and_then(|v| v.as_str()).unwrap_or("");
 
                     full_diff.push_str(&format!("diff --git a/{} b/{}\n", old_path, new_path));
@@ -223,7 +226,10 @@ impl CommitDiff {
                     full_diff.push('\n');
                 }
 
-                tracing::debug!("Reconstructed diff from GitLab API, length: {}", full_diff.len());
+                tracing::debug!(
+                    "Reconstructed diff from GitLab API, length: {}",
+                    full_diff.len()
+                );
                 return Ok(full_diff);
             } else {
                 return Err("No diffs found in GitLab API response".into());
@@ -244,7 +250,13 @@ impl CommitDiff {
 
         for (i, section) in file_sections.iter().enumerate() {
             if let Some(file_diff) = Self::parse_file_diff(section) {
-                tracing::debug!("Parsed file {}: {} (+{} -{})", i, file_diff.file_path, file_diff.additions, file_diff.deletions);
+                tracing::debug!(
+                    "Parsed file {}: {} (+{} -{})",
+                    i,
+                    file_diff.file_path,
+                    file_diff.additions,
+                    file_diff.deletions
+                );
                 files.push(file_diff);
             } else {
                 tracing::debug!("Failed to parse file section {}", i);
@@ -262,7 +274,10 @@ impl CommitDiff {
             return None;
         }
 
-        tracing::debug!("First 3 lines of section: {:?}", &lines[..lines.len().min(3)]);
+        tracing::debug!(
+            "First 3 lines of section: {:?}",
+            &lines[..lines.len().min(3)]
+        );
 
         let file_path = lines
             .iter()
@@ -308,14 +323,20 @@ impl CommitDiff {
         match &self.file_filter {
             None => true,
             Some(filter) => {
-                file_path.contains(filter) ||
-                file_path.ends_with(filter) ||
-                file_path.split('/').last().map(|name| name == filter).unwrap_or(false)
+                file_path.contains(filter)
+                    || file_path.ends_with(filter)
+                    || file_path
+                        .split('/')
+                        .last()
+                        .map(|name| name == filter)
+                        .unwrap_or(false)
             }
         }
     }
 
-    pub fn format_diff_response(&self) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn format_diff_response(
+        &self,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
         let diff_content = self.fetch_diff()?;
         let mut files = self.parse_diff_files(&diff_content);
 
@@ -325,7 +346,11 @@ impl CommitDiff {
 
         if files.is_empty() {
             if self.file_filter.is_some() {
-                return Err(format!("No file matching '{}' found in this commit", self.file_filter.as_ref().unwrap()).into());
+                return Err(format!(
+                    "No file matching '{}' found in this commit",
+                    self.file_filter.as_ref().unwrap()
+                )
+                .into());
             }
             return Err("No files changed in this commit".into());
         }
@@ -334,11 +359,7 @@ impl CommitDiff {
 
         for file in files {
             let stats = format!("+{} -{}", file.additions, file.deletions);
-            let file_name = file
-                .file_path
-                .split('/')
-                .last()
-                .unwrap_or(&file.file_path);
+            let file_name = file.file_path.split('/').last().unwrap_or(&file.file_path);
 
             let response = format!(
                 "**{}** `{}`\n```diff\n{}\n```",

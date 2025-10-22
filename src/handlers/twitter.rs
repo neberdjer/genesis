@@ -1,7 +1,9 @@
 use super::twitter_handler::TwitterPost;
 use poise::serenity_prelude as serenity;
 use serde_json::json;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tracing::warn;
 
 #[cfg(feature = "database")]
@@ -10,6 +12,9 @@ use crate::db;
 use sqlx::PgPool;
 
 const EMBED_SUPPRESS_DELAY_MS: u64 = 500;
+static RATE_LIMIT: OnceLock<Mutex<HashMap<serenity::UserId, Instant>>> = OnceLock::new();
+
+const RATE_LIMIT_SECONDS: u64 = 10;
 
 pub fn is_twitter_url(word: &str) -> bool {
     (word.contains("twitter.com") || word.contains("x.com")) && word.contains("/status/")
@@ -49,7 +54,19 @@ pub async fn handle_twitter_links(
     }
 
     if let Some(pool) = pool {
+        match db::is_user_blacklisted(pool, &msg.author.id.to_string()).await {
+            Ok(true) => return,
+            Err(e) => warn!("Failed to check user blacklist: {}", e),
+            _ => {}
+        }
+
         if let Some(guild_id) = msg.guild_id {
+            match db::is_server_blacklisted(pool, &guild_id.to_string()).await {
+                Ok(true) => return,
+                Err(e) => warn!("Failed to check server blacklist: {}", e),
+                _ => {}
+            }
+
             match db::get_server_settings(pool, &guild_id.to_string()).await {
                 Ok(settings) if !settings.twitter_enabled => return,
                 Err(e) => warn!("Failed to fetch server settings: {}", e),
@@ -70,8 +87,24 @@ pub async fn handle_twitter_links(ctx: &serenity::Context, msg: &serenity::Messa
     handle_twitter_links_impl(ctx, msg).await;
 }
 
-async fn handle_twitter_links_impl(ctx: &serenity::Context, msg: &serenity::Message) {
+fn check_rate_limit(user_id: serenity::UserId) -> bool {
+    let rate_limit = RATE_LIMIT.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut rate_limit = match rate_limit.lock() {
+        Ok(guard) => guard,
+        Err(_) => return true,
+    };
 
+    if let Some(last_time) = rate_limit.get(&user_id) {
+        if last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS {
+            return false;
+        }
+    }
+
+    rate_limit.insert(user_id, Instant::now());
+    true
+}
+
+async fn handle_twitter_links_impl(ctx: &serenity::Context, msg: &serenity::Message) {
     let found_tweets: Vec<(String, String)> = msg
         .content
         .split_whitespace()
@@ -83,26 +116,32 @@ async fn handle_twitter_links_impl(ctx: &serenity::Context, msg: &serenity::Mess
         return;
     }
 
+    if !check_rate_limit(msg.author.id) {
+        return;
+    }
+
     suppress_embeds(ctx, msg).await;
 
     for (username, tweet_id) in found_tweets {
         match TwitterPost::fetch(&username, &tweet_id) {
             Ok(post) => {
-                let mut container_components = vec![
-                    json!({
-                        "type": 10,
-                        "content": format!("**{}** (@{})\n{}", post.author, post.username, post.text)
-                    })
-                ];
+                let mut container_components = vec![json!({
+                    "type": 10,
+                    "content": format!("**{}** (@{})\n{}", post.author, post.username, post.text)
+                })];
 
                 if !post.images.is_empty() {
-                    let media_items: Vec<_> = post.images.iter().map(|url| {
-                        json!({
-                            "media": {
-                                "url": url
-                            }
+                    let media_items: Vec<_> = post
+                        .images
+                        .iter()
+                        .map(|url| {
+                            json!({
+                                "media": {
+                                    "url": url
+                                }
+                            })
                         })
-                    }).collect();
+                        .collect();
 
                     container_components.push(json!({
                         "type": 12,
@@ -122,7 +161,10 @@ async fn handle_twitter_links_impl(ctx: &serenity::Context, msg: &serenity::Mess
                     "flags": 1 << 15
                 });
 
-                let _ = ctx.http.send_message(msg.channel_id, vec![], &payload).await;
+                let _ = ctx
+                    .http
+                    .send_message(msg.channel_id, vec![], &payload)
+                    .await;
             }
             Err(e) => warn!("Failed to fetch tweet {}/{}: {}", username, tweet_id, e),
         }

@@ -1,15 +1,19 @@
-use crate::constants::{
-    DISCORD_MESSAGE_LIMIT, EMBED_SUPPRESS_DELAY_MS, TRUNCATED_MESSAGE_LIMIT,
-};
 use super::git_handler::GitFileLink;
+use crate::constants::{DISCORD_MESSAGE_LIMIT, EMBED_SUPPRESS_DELAY_MS, TRUNCATED_MESSAGE_LIMIT};
 use poise::serenity_prelude as serenity;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tracing::{error, warn};
 
 #[cfg(feature = "database")]
 use crate::db;
 #[cfg(feature = "database")]
 use sqlx::PgPool;
+
+static RATE_LIMIT: OnceLock<Mutex<HashMap<serenity::UserId, Instant>>> = OnceLock::new();
+
+const RATE_LIMIT_SECONDS: u64 = 10;
 
 pub fn is_git_platform_url(word: &str) -> bool {
     (word.contains("github.com") && word.contains("/blob/"))
@@ -42,11 +46,7 @@ async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
     }
 }
 
-async fn send_code_snippet(
-    ctx: &serenity::Context,
-    msg: &serenity::Message,
-    response: String,
-) {
+async fn send_code_snippet(ctx: &serenity::Context, msg: &serenity::Message, response: String) {
     let content = if response.len() <= DISCORD_MESSAGE_LIMIT {
         response
     } else {
@@ -81,7 +81,19 @@ pub async fn handle_git_links(
     }
 
     if let Some(pool) = pool {
+        match db::is_user_blacklisted(pool, &msg.author.id.to_string()).await {
+            Ok(true) => return,
+            Err(e) => warn!("Failed to check user blacklist: {}", e),
+            _ => {}
+        }
+
         if let Some(guild_id) = msg.guild_id {
+            match db::is_server_blacklisted(pool, &guild_id.to_string()).await {
+                Ok(true) => return,
+                Err(e) => warn!("Failed to check server blacklist: {}", e),
+                _ => {}
+            }
+
             match db::get_server_settings(pool, &guild_id.to_string()).await {
                 Ok(settings) if !settings.git_links_enabled => return,
                 Err(e) => warn!("Failed to fetch server settings: {}", e),
@@ -102,8 +114,24 @@ pub async fn handle_git_links(ctx: &serenity::Context, msg: &serenity::Message) 
     handle_git_links_impl(ctx, msg).await;
 }
 
-async fn handle_git_links_impl(ctx: &serenity::Context, msg: &serenity::Message) {
+fn check_rate_limit(user_id: serenity::UserId) -> bool {
+    let rate_limit = RATE_LIMIT.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut rate_limit = match rate_limit.lock() {
+        Ok(guard) => guard,
+        Err(_) => return true,
+    };
 
+    if let Some(last_time) = rate_limit.get(&user_id) {
+        if last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS {
+            return false;
+        }
+    }
+
+    rate_limit.insert(user_id, Instant::now());
+    true
+}
+
+async fn handle_git_links_impl(ctx: &serenity::Context, msg: &serenity::Message) {
     let found_links: Vec<GitFileLink> = msg
         .content
         .split_whitespace()
@@ -112,6 +140,10 @@ async fn handle_git_links_impl(ctx: &serenity::Context, msg: &serenity::Message)
         .collect();
 
     if found_links.is_empty() {
+        return;
+    }
+
+    if !check_rate_limit(msg.author.id) {
         return;
     }
 
