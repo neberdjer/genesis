@@ -4,7 +4,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tracing::warn;
+use tracing::{debug, warn};
 
 #[cfg(feature = "database")]
 use crate::db;
@@ -105,36 +105,81 @@ fn check_rate_limit(user_id: serenity::UserId) -> bool {
 }
 
 async fn handle_twitter_links_impl(ctx: &serenity::Context, msg: &serenity::Message) {
-    let found_tweets: Vec<(String, String)> = msg
-        .content
-        .split_whitespace()
-        .filter(|word| is_twitter_url(word))
-        .filter_map(|word| TwitterPost::parse(clean_url(word)))
+    debug!("Checking message for Twitter URLs: {}", msg.content);
+
+    let words: Vec<&str> = msg.content.split_whitespace().collect();
+    debug!("Split into {} words", words.len());
+
+    let found_tweets: Vec<(String, String)> = words
+        .iter()
+        .filter(|word| {
+            let is_twitter = is_twitter_url(word);
+            debug!("Word '{}' is twitter URL: {}", word, is_twitter);
+            is_twitter
+        })
+        .filter_map(|word| {
+            let cleaned = clean_url(word);
+            debug!("Cleaned URL: '{}'", cleaned);
+            let parsed = TwitterPost::parse(cleaned);
+            debug!("Parsed result: {:?}", parsed);
+            parsed
+        })
         .collect();
+
+    debug!("Found {} tweets", found_tweets.len());
 
     if found_tweets.is_empty() {
         return;
     }
 
     if !check_rate_limit(msg.author.id) {
+        debug!("Rate limited, skipping");
         return;
     }
 
+    debug!("Suppressing embeds");
     suppress_embeds(ctx, msg).await;
 
+    debug!("Processing {} tweets", found_tweets.len());
     for (username, tweet_id) in found_tweets {
+        debug!("Fetching tweet: username={}, id={}", username, tweet_id);
         match TwitterPost::fetch(&username, &tweet_id) {
             Ok(post) => {
+                debug!("Successfully fetched tweet from @{}", post.username);
+                debug!("Tweet has {} images", post.images.len());
+                debug!("Tweet replying_to: {:?}", post.replying_to);
+
+                let mut content = format!("**{}** (@{})", post.author, post.username);
+
+                if let Some(replying_to) = &post.replying_to {
+                    content.push_str(&format!("\nReplying to @{}", replying_to));
+                }
+
+                content.push_str(&format!("\n{}", post.text));
+
+                if let Some(quote_author) = &post.quote_author {
+                    if let (Some(quote_username), Some(quote_text)) =
+                        (&post.quote_username, &post.quote_text)
+                    {
+                        content.push_str(&format!(
+                            "\n\n> **{}** (@{})\n> {}",
+                            quote_author, quote_username, quote_text
+                        ));
+                    }
+                }
+
                 let mut container_components = vec![json!({
                     "type": 10,
-                    "content": format!("**{}** (@{})\n{}", post.author, post.username, post.text)
+                    "content": content
                 })];
 
                 if !post.images.is_empty() {
+                    debug!("Adding {} images to payload", post.images.len());
                     let media_items: Vec<_> = post
                         .images
                         .iter()
                         .map(|url| {
+                            debug!("Image URL: {}", url);
                             json!({
                                 "media": {
                                     "url": url
@@ -161,6 +206,7 @@ async fn handle_twitter_links_impl(ctx: &serenity::Context, msg: &serenity::Mess
                     "flags": 1 << 15
                 });
 
+                debug!("Sending tweet message to channel {}", msg.channel_id);
                 let _ = ctx
                     .http
                     .send_message(msg.channel_id, vec![], &payload)

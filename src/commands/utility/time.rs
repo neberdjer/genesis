@@ -18,7 +18,11 @@ fn parse_timezone(tz_str: &str) -> Result<TimezoneType, Error> {
             .or_else(|| tz_upper.strip_prefix("UTC"))
             .unwrap_or("");
 
-        if offset_str.is_empty() || offset_str == "+0" || offset_str == "+00:00" || offset_str == "-0" {
+        if offset_str.is_empty()
+            || offset_str == "+0"
+            || offset_str == "+00:00"
+            || offset_str == "-0"
+        {
             return Ok(TimezoneType::Named(Tz::UTC));
         }
 
@@ -33,13 +37,18 @@ fn parse_timezone(tz_str: &str) -> Result<TimezoneType, Error> {
         };
 
         let hours: i32 = if rest.len() <= 2 {
-            rest.parse().map_err(|_| format!("Invalid offset: {}", tz_str))?
+            rest.parse()
+                .map_err(|_| format!("Invalid offset: {}", tz_str))?
         } else {
-            rest[..2].parse().map_err(|_| format!("Invalid offset: {}", tz_str))?
+            rest[..2]
+                .parse()
+                .map_err(|_| format!("Invalid offset: {}", tz_str))?
         };
 
         let minutes: i32 = if rest.len() > 2 {
-            rest[2..].parse().map_err(|_| format!("Invalid offset: {}", tz_str))?
+            rest[2..]
+                .parse()
+                .map_err(|_| format!("Invalid offset: {}", tz_str))?
         } else {
             0
         };
@@ -73,12 +82,18 @@ pub async fn time(
     #[description = "Source timezone (optional, defaults to UTC)"] from_tz: Option<String>,
     #[description = "Target timezones (comma-separated, optional)"] to_tz: Option<String>,
 ) -> Result<(), Error> {
-    debug!("time command called with time='{}', from_tz={:?}, to_tz={:?}", time, from_tz, to_tz);
+    debug!(
+        "time command called with time='{}', from_tz={:?}, to_tz={:?}",
+        time, from_tz, to_tz
+    );
 
     let time_trimmed = time.trim();
     let from_tz_str = from_tz.as_deref().unwrap_or("UTC").trim();
 
-    debug!("After trimming: time_trimmed='{}', from_tz_str='{}'", time_trimmed, from_tz_str);
+    debug!(
+        "After trimming: time_trimmed='{}', from_tz_str='{}'",
+        time_trimmed, from_tz_str
+    );
 
     let source_tz = parse_timezone(from_tz_str)?;
 
@@ -97,11 +112,17 @@ pub async fn time(
         let (source_time_str, source_date) = match &source_tz {
             TimezoneType::Named(tz) => {
                 let source_time = now_utc.with_timezone(tz);
-                (source_time.format("%H:%M:%S %Z").to_string(), source_time.date_naive())
+                (
+                    source_time.format("%H:%M:%S %Z").to_string(),
+                    source_time.date_naive(),
+                )
             }
             TimezoneType::Offset(offset) => {
                 let source_time = now_utc.with_timezone(offset);
-                (source_time.format("%H:%M:%S %:z").to_string(), source_time.date_naive())
+                (
+                    source_time.format("%H:%M:%S %:z").to_string(),
+                    source_time.date_naive(),
+                )
             }
         };
 
@@ -176,11 +197,17 @@ pub async fn time(
         let (source_time_str, source_date) = match &source_tz {
             TimezoneType::Named(tz) => {
                 let source_time = source_datetime_utc.with_timezone(tz);
-                (source_time.format("%H:%M:%S %Z").to_string(), source_time.date_naive())
+                (
+                    source_time.format("%H:%M:%S %Z").to_string(),
+                    source_time.date_naive(),
+                )
             }
             TimezoneType::Offset(offset) => {
                 let source_time = source_datetime_utc.with_timezone(offset);
-                (source_time.format("%H:%M:%S %:z").to_string(), source_time.date_naive())
+                (
+                    source_time.format("%H:%M:%S %:z").to_string(),
+                    source_time.date_naive(),
+                )
             }
         };
 

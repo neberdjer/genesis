@@ -15,6 +15,13 @@ struct TweetData {
     text: String,
     #[serde(default)]
     media: Option<MediaData>,
+    #[serde(default)]
+    replying_to: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    replying_to_status: Option<String>,
+    #[serde(default)]
+    quote: Option<Box<TweetData>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +53,10 @@ pub struct TwitterPost {
     pub username: String,
     pub text: String,
     pub images: Vec<String>,
+    pub replying_to: Option<String>,
+    pub quote_author: Option<String>,
+    pub quote_username: Option<String>,
+    pub quote_text: Option<String>,
 }
 
 impl TwitterPost {
@@ -75,20 +86,44 @@ impl TwitterPost {
         let data: FxTwitterResponse = response.into_json()?;
         let tweet = data.tweet;
 
-        let images = tweet
+        let mut images = tweet
             .media
+            .as_ref()
             .map(|m| {
-                let mut all_media = m.photos.into_iter().map(|p| p.url).collect::<Vec<_>>();
-                all_media.extend(m.videos.into_iter().map(|v| v.url));
+                let mut all_media = m.photos.iter().map(|p| p.url.clone()).collect::<Vec<_>>();
+                all_media.extend(m.videos.iter().map(|v| v.url.clone()));
                 all_media
             })
             .unwrap_or_default();
+
+        let (quote_author, quote_username, quote_text) = if let Some(quoted) = &tweet.quote {
+            if let Some(quoted_media) = &quoted.media {
+                let mut quoted_images = quoted_media
+                    .photos
+                    .iter()
+                    .map(|p| p.url.clone())
+                    .collect::<Vec<_>>();
+                quoted_images.extend(quoted_media.videos.iter().map(|v| v.url.clone()));
+                images.extend(quoted_images);
+            }
+            (
+                Some(quoted.author.name.clone()),
+                Some(quoted.author.screen_name.clone()),
+                Some(quoted.text.clone()),
+            )
+        } else {
+            (None, None, None)
+        };
 
         Ok(Self {
             author: tweet.author.name,
             username: tweet.author.screen_name,
             text: tweet.text,
             images,
+            replying_to: tweet.replying_to,
+            quote_author,
+            quote_username,
+            quote_text,
         })
     }
 }
