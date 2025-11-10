@@ -1,0 +1,1 @@
+ALTER TABLE server_settings ADD COLUMN IF NOT EXISTS tiktok_enabled BOOLEAN DEFAULT TRUE;
