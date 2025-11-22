@@ -141,9 +141,9 @@ async fn handle_tiktok_links_impl(ctx: &serenity::Context, msg: &serenity::Messa
     suppress_embeds(ctx, msg).await;
 
     debug!("Processing {} TikTok videos", found_videos.len());
-    for video_id in found_videos {
-        debug!("Fetching TikTok: id={}", video_id);
-        match TikTokPost::fetch(&video_id) {
+    for video_url in found_videos {
+        debug!("Fetching TikTok: url={}", video_url);
+        match TikTokPost::fetch(&video_url) {
             Ok(post) => {
                 debug!("Successfully fetched TikTok from @{}", post.username);
                 debug!("TikTok has {} media items", post.media.len());
@@ -195,7 +195,7 @@ async fn handle_tiktok_links_impl(ctx: &serenity::Context, msg: &serenity::Messa
                     .send_message(msg.channel_id, vec![], &payload)
                     .await;
             }
-            Err(e) => warn!("Failed to fetch TikTok {}: {}", video_id, e),
+            Err(e) => warn!("Failed to fetch TikTok {}: {}", video_url, e),
         }
     }
 }

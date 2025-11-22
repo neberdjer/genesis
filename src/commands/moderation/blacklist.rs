@@ -1,7 +1,6 @@
 use crate::{Context, Error};
 use poise::serenity_prelude as serenity;
 use std::env;
-use tracing::info;
 
 #[cfg(feature = "database")]
 use crate::db;

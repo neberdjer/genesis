@@ -41,17 +41,12 @@ impl TikTokPost {
                 .unwrap()
         });
 
-        let captures = pattern.captures(url)?;
-        let video_id = captures.get(1)?.as_str().to_string();
-
-        Some(video_id)
+        pattern.captures(url)?;
+        Some(url.to_string())
     }
 
-    pub fn fetch(video_id: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let api_url = format!(
-            "https://www.tikwm.com/api/?url=https://www.tiktok.com/t/{}",
-            video_id
-        );
+    pub fn fetch(url: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let api_url = format!("https://www.tikwm.com/api/?url={}", url);
 
         let response = ureq::get(&api_url)
             .set("User-Agent", "Mozilla/5.0 (compatible; GenesisBot/1.0)")
