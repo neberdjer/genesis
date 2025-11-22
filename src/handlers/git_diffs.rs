@@ -6,9 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tracing::{error, warn};
 
-#[cfg(feature = "database")]
 use crate::db;
-#[cfg(feature = "database")]
 use sqlx::PgPool;
 
 static DIFF_CACHE: OnceLock<Mutex<HashMap<String, CachedDiff>>> = OnceLock::new();
@@ -204,7 +202,6 @@ async fn send_paginated_diff(
     }
 }
 
-#[cfg(feature = "database")]
 pub async fn handle_commit_diffs(
     ctx: &serenity::Context,
     msg: &serenity::Message,
@@ -242,15 +239,6 @@ pub async fn handle_commit_diffs(
     }
 
     handle_commit_diffs_impl(ctx, msg, settings.as_ref()).await;
-}
-
-#[cfg(not(feature = "database"))]
-pub async fn handle_commit_diffs(ctx: &serenity::Context, msg: &serenity::Message) {
-    if msg.author.bot {
-        return;
-    }
-
-    handle_commit_diffs_impl(ctx, msg, None).await;
 }
 
 fn check_rate_limit(user_id: serenity::UserId) -> bool {
@@ -333,7 +321,6 @@ async fn handle_commit_diffs_impl(
         return;
     }
 
-    #[cfg(feature = "database")]
     if let Some(settings) = settings {
         if !settings.git_compares_enabled {
             found_commits.retain(|commit| !commit.is_compare);

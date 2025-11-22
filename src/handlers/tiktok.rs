@@ -6,9 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
-#[cfg(feature = "database")]
 use crate::db;
-#[cfg(feature = "database")]
 use sqlx::PgPool;
 
 const EMBED_SUPPRESS_DELAY_MS: u64 = 500;
@@ -43,7 +41,6 @@ async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
     }
 }
 
-#[cfg(feature = "database")]
 pub async fn handle_tiktok_links(
     ctx: &serenity::Context,
     msg: &serenity::Message,
@@ -73,15 +70,6 @@ pub async fn handle_tiktok_links(
                 _ => {}
             }
         }
-    }
-
-    handle_tiktok_links_impl(ctx, msg).await;
-}
-
-#[cfg(not(feature = "database"))]
-pub async fn handle_tiktok_links(ctx: &serenity::Context, msg: &serenity::Message) {
-    if msg.author.bot {
-        return;
     }
 
     handle_tiktok_links_impl(ctx, msg).await;

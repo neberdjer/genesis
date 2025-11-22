@@ -1,10 +1,8 @@
+use crate::db;
 use crate::{Context, Error};
 use poise::serenity_prelude as serenity;
 use std::env;
 use tracing::info;
-
-#[cfg(feature = "database")]
-use crate::db;
 
 async fn check_owner(ctx: Context<'_>) -> Result<bool, Error> {
     let owner_id = env::var("OWNER_ID")
@@ -25,7 +23,6 @@ pub async fn blacklist(_ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(feature = "database")]
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn add(
     ctx: Context<'_>,
@@ -61,18 +58,6 @@ async fn add(
     Ok(())
 }
 
-#[cfg(not(feature = "database"))]
-#[poise::command(slash_command, prefix_command, check = "check_owner")]
-async fn add(
-    ctx: Context<'_>,
-    #[description = "User to blacklist"] _user: serenity::User,
-    #[description = "Reason for blacklist"] _reason: Option<String>,
-) -> Result<(), Error> {
-    ctx.say("Database feature is not enabled").await?;
-    Ok(())
-}
-
-#[cfg(feature = "database")]
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn remove(
     ctx: Context<'_>,
@@ -102,17 +87,6 @@ async fn remove(
     Ok(())
 }
 
-#[cfg(not(feature = "database"))]
-#[poise::command(slash_command, prefix_command, check = "check_owner")]
-async fn remove(
-    ctx: Context<'_>,
-    #[description = "User to remove from blacklist"] _user: serenity::User,
-) -> Result<(), Error> {
-    ctx.say("Database feature is not enabled").await?;
-    Ok(())
-}
-
-#[cfg(feature = "database")]
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn add_server(
     ctx: Context<'_>,
@@ -148,18 +122,6 @@ async fn add_server(
     Ok(())
 }
 
-#[cfg(not(feature = "database"))]
-#[poise::command(slash_command, prefix_command, check = "check_owner")]
-async fn add_server(
-    ctx: Context<'_>,
-    #[description = "Server ID to blacklist"] _guild_id: String,
-    #[description = "Reason for blacklist"] _reason: Option<String>,
-) -> Result<(), Error> {
-    ctx.say("Database feature is not enabled").await?;
-    Ok(())
-}
-
-#[cfg(feature = "database")]
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn remove_server(
     ctx: Context<'_>,
@@ -186,15 +148,5 @@ async fn remove_server(
             .await?;
     }
 
-    Ok(())
-}
-
-#[cfg(not(feature = "database"))]
-#[poise::command(slash_command, prefix_command, check = "check_owner")]
-async fn remove_server(
-    ctx: Context<'_>,
-    #[description = "Server ID to remove from blacklist"] _guild_id: String,
-) -> Result<(), Error> {
-    ctx.say("Database feature is not enabled").await?;
     Ok(())
 }

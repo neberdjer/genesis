@@ -1,4 +1,3 @@
-#[cfg(feature = "database")]
 use crate::db;
 use crate::{Context, Error};
 
@@ -12,7 +11,6 @@ pub async fn settings(_ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(feature = "database")]
 #[poise::command(slash_command, guild_only, required_permissions = "ADMINISTRATOR")]
 async fn toggle(
     ctx: Context<'_>,
@@ -33,19 +31,6 @@ async fn toggle(
     ctx.say(format!("**{}** has been {}", service, status))
         .await?;
 
-    Ok(())
-}
-
-#[cfg(not(feature = "database"))]
-#[poise::command(slash_command, guild_only, required_permissions = "ADMINISTRATOR")]
-async fn toggle(
-    ctx: Context<'_>,
-    #[description = "Service to toggle"]
-    #[autocomplete = "autocomplete_service"]
-    _service: String,
-    #[description = "Enable or disable"] _enabled: bool,
-) -> Result<(), Error> {
-    ctx.say("Database feature is not enabled").await?;
     Ok(())
 }
 

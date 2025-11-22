@@ -11,8 +11,6 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
     commands.push(general::ping());
     commands.extend(moderation::commands());
     commands.extend(utility::commands());
-
-    #[cfg(feature = "database")]
     commands.push(settings::settings());
 
     commands

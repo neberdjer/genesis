@@ -6,9 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tracing::{error, warn};
 
-#[cfg(feature = "database")]
 use crate::db;
-#[cfg(feature = "database")]
 use sqlx::PgPool;
 
 static RATE_LIMIT: OnceLock<Mutex<HashMap<serenity::UserId, Instant>>> = OnceLock::new();
@@ -70,7 +68,6 @@ async fn send_code_snippet(ctx: &serenity::Context, msg: &serenity::Message, res
     }
 }
 
-#[cfg(feature = "database")]
 pub async fn handle_git_links(
     ctx: &serenity::Context,
     msg: &serenity::Message,
@@ -100,15 +97,6 @@ pub async fn handle_git_links(
                 _ => {}
             }
         }
-    }
-
-    handle_git_links_impl(ctx, msg).await;
-}
-
-#[cfg(not(feature = "database"))]
-pub async fn handle_git_links(ctx: &serenity::Context, msg: &serenity::Message) {
-    if msg.author.bot {
-        return;
     }
 
     handle_git_links_impl(ctx, msg).await;

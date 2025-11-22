@@ -1,15 +1,9 @@
-#[cfg(feature = "database")]
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
-#[cfg(feature = "database")]
 use std::fs;
-#[cfg(feature = "database")]
 use std::path::Path;
-#[cfg(feature = "database")]
 use std::time::Duration;
-#[cfg(feature = "database")]
 use tracing::{error, info, warn};
 
-#[cfg(feature = "database")]
 #[derive(Debug, Clone)]
 pub struct ServerSettings {
     #[allow(dead_code)]
@@ -21,7 +15,6 @@ pub struct ServerSettings {
     pub tiktok_enabled: bool,
 }
 
-#[cfg(feature = "database")]
 pub async fn connect(database_url: &str) -> Result<PgPool, sqlx::Error> {
     let pool = PgPoolOptions::new()
         .max_connections(10)
@@ -37,7 +30,6 @@ pub async fn connect(database_url: &str) -> Result<PgPool, sqlx::Error> {
     Ok(pool)
 }
 
-#[cfg(feature = "database")]
 async fn create_migrations_table(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
@@ -53,7 +45,6 @@ async fn create_migrations_table(pool: &PgPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-#[cfg(feature = "database")]
 async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
     let migrations_dir = Path::new("migrations");
 
@@ -139,7 +130,6 @@ async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-#[cfg(feature = "database")]
 pub async fn get_server_settings(
     pool: &PgPool,
     guild_id: &str,
@@ -176,7 +166,6 @@ pub async fn get_server_settings(
     }
 }
 
-#[cfg(feature = "database")]
 pub async fn update_server_setting(
     pool: &PgPool,
     guild_id: &str,
@@ -241,7 +230,6 @@ pub async fn update_server_setting(
     Ok(())
 }
 
-#[cfg(feature = "database")]
 pub async fn is_user_blacklisted(pool: &PgPool, user_id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query_scalar::<_, bool>(
         r#"
@@ -255,7 +243,6 @@ pub async fn is_user_blacklisted(pool: &PgPool, user_id: &str) -> Result<bool, s
     Ok(result)
 }
 
-#[cfg(feature = "database")]
 pub async fn add_user_to_blacklist(
     pool: &PgPool,
     user_id: &str,
@@ -278,7 +265,6 @@ pub async fn add_user_to_blacklist(
     Ok(())
 }
 
-#[cfg(feature = "database")]
 pub async fn remove_user_from_blacklist(pool: &PgPool, user_id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         r#"
@@ -292,7 +278,6 @@ pub async fn remove_user_from_blacklist(pool: &PgPool, user_id: &str) -> Result<
     Ok(result.rows_affected() > 0)
 }
 
-#[cfg(feature = "database")]
 pub async fn is_server_blacklisted(pool: &PgPool, guild_id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query_scalar::<_, bool>(
         r#"
@@ -306,7 +291,6 @@ pub async fn is_server_blacklisted(pool: &PgPool, guild_id: &str) -> Result<bool
     Ok(result)
 }
 
-#[cfg(feature = "database")]
 pub async fn add_server_to_blacklist(
     pool: &PgPool,
     guild_id: &str,
@@ -329,7 +313,6 @@ pub async fn add_server_to_blacklist(
     Ok(())
 }
 
-#[cfg(feature = "database")]
 pub async fn remove_server_from_blacklist(
     pool: &PgPool,
     guild_id: &str,
