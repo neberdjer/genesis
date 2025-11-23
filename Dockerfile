@@ -18,7 +18,7 @@ RUN cargo build --release && rm -rf src
 COPY src ./src
 COPY migrations ./migrations
 
-RUN touch src/main.rs && cargo build --release --features database
+RUN touch src/main.rs && cargo build --release
 
 FROM debian:bookworm-slim AS runtime
 
