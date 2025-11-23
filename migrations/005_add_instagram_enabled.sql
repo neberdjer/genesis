@@ -1,0 +1,1 @@
+ALTER TABLE server_settings ADD COLUMN IF NOT EXISTS instagram_enabled BOOLEAN DEFAULT TRUE;

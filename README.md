@@ -1,6 +1,6 @@
 # Genesis
 
-Discord bot with GitHub/GitLab integration, Twitter/TikTok link handling, and moderation features.
+Discord bot with GitHub/GitLab integration, Twitter/TikTok/Instagram link handling, and moderation features.
 
 ## Docker Registry
 
@@ -45,6 +45,7 @@ Optional:
   - `git_links` - GitHub/GitLab file links
   - `twitter` - Twitter link embeds
   - `tiktok` - TikTok link embeds
+  - `instagram` - Instagram post embeds
 
 ## Features
 
@@ -53,5 +54,6 @@ Optional:
 - GitHub/GitLab file links with code snippets
 - Twitter post embeds with media
 - TikTok video embeds
+- Instagram post embeds with media
 
 All automatic features can be toggled per server using the `/settings toggle` command.

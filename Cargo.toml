@@ -24,3 +24,4 @@ urlencoding = "2.1"
 chrono = "0.4"
 chrono-tz = "0.10"
 sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio"] }
+scraper = "0.20"

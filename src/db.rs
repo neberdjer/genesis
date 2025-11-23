@@ -13,6 +13,7 @@ pub struct ServerSettings {
     pub git_links_enabled: bool,
     pub twitter_enabled: bool,
     pub tiktok_enabled: bool,
+    pub instagram_enabled: bool,
 }
 
 pub async fn connect(database_url: &str) -> Result<PgPool, sqlx::Error> {
@@ -136,7 +137,7 @@ pub async fn get_server_settings(
 ) -> Result<ServerSettings, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled, tiktok_enabled
+        SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled, tiktok_enabled, instagram_enabled
         FROM server_settings
         WHERE guild_id = $1
         "#,
@@ -153,6 +154,7 @@ pub async fn get_server_settings(
             git_links_enabled: row.try_get("git_links_enabled")?,
             twitter_enabled: row.try_get("twitter_enabled")?,
             tiktok_enabled: row.try_get("tiktok_enabled")?,
+            instagram_enabled: row.try_get("instagram_enabled").unwrap_or(true),
         })
     } else {
         Ok(ServerSettings {
@@ -162,6 +164,7 @@ pub async fn get_server_settings(
             git_links_enabled: true,
             twitter_enabled: true,
             tiktok_enabled: true,
+            instagram_enabled: true,
         })
     }
 }
@@ -219,6 +222,16 @@ pub async fn update_server_setting(
                 VALUES ($1, $2)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET tiktok_enabled = $2, updated_at = NOW()
+                "#,
+        )
+        .bind(guild_id)
+        .bind(enabled),
+        "instagram" => sqlx::query(
+            r#"
+                INSERT INTO server_settings (guild_id, instagram_enabled)
+                VALUES ($1, $2)
+                ON CONFLICT (guild_id)
+                DO UPDATE SET instagram_enabled = $2, updated_at = NOW()
                 "#,
         )
         .bind(guild_id)

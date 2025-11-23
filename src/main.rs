@@ -5,8 +5,8 @@ mod handlers;
 
 use constants::{DEFAULT_ENVIRONMENT, DEFAULT_PREFIX};
 use handlers::{
-    handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_tiktok_links,
-    handle_twitter_links,
+    handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_instagram_links,
+    handle_tiktok_links, handle_twitter_links,
 };
 use poise::serenity_prelude as serenity;
 use std::env;
@@ -37,6 +37,7 @@ fn event_handler(
                 handle_git_links(ctx, new_message, Some(&data.pool)).await;
                 handle_twitter_links(ctx, new_message, Some(&data.pool)).await;
                 handle_tiktok_links(ctx, new_message, Some(&data.pool)).await;
+                handle_instagram_links(ctx, new_message, Some(&data.pool)).await;
             }
             poise::serenity_prelude::FullEvent::InteractionCreate { interaction } => {
                 if let serenity::Interaction::Component(component) = interaction {
