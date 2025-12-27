@@ -6,7 +6,7 @@ mod handlers;
 use constants::{DEFAULT_ENVIRONMENT, DEFAULT_PREFIX};
 use handlers::{
     handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_instagram_links,
-    handle_tiktok_links, handle_twitter_links,
+    handle_member_join, handle_tiktok_links, handle_twitter_links,
 };
 use poise::serenity_prelude as serenity;
 use std::env;
@@ -43,6 +43,9 @@ fn event_handler(
                 if let serenity::Interaction::Component(component) = interaction {
                     handle_diff_pagination(ctx, component).await;
                 }
+            }
+            poise::serenity_prelude::FullEvent::GuildMemberAddition { new_member } => {
+                handle_member_join(ctx, new_member, Some(&data.pool)).await;
             }
             _ => {}
         }
@@ -112,8 +115,9 @@ async fn main() -> Result<(), Error> {
         })
         .build();
 
-    let intents =
-        serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
+    let intents = serenity::GatewayIntents::non_privileged()
+        | serenity::GatewayIntents::MESSAGE_CONTENT
+        | serenity::GatewayIntents::GUILD_MEMBERS;
 
     let mut client = serenity::ClientBuilder::new(token, intents)
         .framework(framework)

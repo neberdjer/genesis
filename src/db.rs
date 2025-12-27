@@ -16,6 +16,13 @@ pub struct ServerSettings {
     pub instagram_enabled: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct WelcomeSettings {
+    pub enabled: bool,
+    pub channel_id: Option<String>,
+    pub message: String,
+}
+
 pub async fn connect(database_url: &str) -> Result<PgPool, sqlx::Error> {
     let pool = PgPoolOptions::new()
         .max_connections(10)
@@ -340,4 +347,99 @@ pub async fn remove_server_from_blacklist(
     .await?;
 
     Ok(result.rows_affected() > 0)
+}
+
+pub async fn get_welcome_settings(
+    pool: &PgPool,
+    guild_id: &str,
+) -> Result<WelcomeSettings, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        SELECT welcome_enabled, welcome_channel_id, welcome_message
+        FROM server_settings
+        WHERE guild_id = $1
+        "#,
+    )
+    .bind(guild_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(row) = result {
+        Ok(WelcomeSettings {
+            enabled: row.try_get("welcome_enabled").unwrap_or(false),
+            channel_id: row.try_get("welcome_channel_id").ok(),
+            message: row
+                .try_get("welcome_message")
+                .unwrap_or_else(|_| "Welcome to {server_name}, {user}".to_string()),
+        })
+    } else {
+        Ok(WelcomeSettings {
+            enabled: false,
+            channel_id: None,
+            message: "Welcome to {server_name}, {user}".to_string(),
+        })
+    }
+}
+
+pub async fn set_welcome_enabled(
+    pool: &PgPool,
+    guild_id: &str,
+    enabled: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings (guild_id, welcome_enabled)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET welcome_enabled = $2, updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(enabled)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_welcome_channel(
+    pool: &PgPool,
+    guild_id: &str,
+    channel_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings (guild_id, welcome_channel_id)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET welcome_channel_id = $2, updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(channel_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_welcome_message(
+    pool: &PgPool,
+    guild_id: &str,
+    message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings (guild_id, welcome_message)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET welcome_message = $2, updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(message)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
