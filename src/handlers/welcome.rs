@@ -23,7 +23,10 @@ pub async fn handle_member_join(
     let settings = match db::get_welcome_settings(pool, &guild_id).await {
         Ok(settings) => settings,
         Err(e) => {
-            error!("Failed to get welcome settings for guild {}: {}", guild_id, e);
+            error!(
+                "Failed to get welcome settings for guild {}: {}",
+                guild_id, e
+            );
             return;
         }
     };
@@ -32,6 +35,28 @@ pub async fn handle_member_join(
         return;
     }
 
+    // Assign welcome role if configured
+    if let Some(role_id_str) = &settings.role_id {
+        if let Ok(role_id) = role_id_str.parse::<u64>() {
+            if let Err(e) = ctx
+                .http
+                .add_member_role(
+                    member.guild_id,
+                    member.user.id,
+                    serenity::RoleId::new(role_id),
+                    Some("Welcome role"),
+                )
+                .await
+            {
+                warn!(
+                    "Failed to assign welcome role {} to user {}: {}",
+                    role_id, member.user.id, e
+                );
+            }
+        }
+    }
+
+    // Send welcome message if channel is configured
     let Some(channel_id_str) = settings.channel_id else {
         return;
     };

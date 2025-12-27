@@ -21,6 +21,7 @@ pub struct WelcomeSettings {
     pub enabled: bool,
     pub channel_id: Option<String>,
     pub message: String,
+    pub role_id: Option<String>,
 }
 
 pub async fn connect(database_url: &str) -> Result<PgPool, sqlx::Error> {
@@ -355,7 +356,7 @@ pub async fn get_welcome_settings(
 ) -> Result<WelcomeSettings, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        SELECT welcome_enabled, welcome_channel_id, welcome_message
+        SELECT welcome_enabled, welcome_channel_id, welcome_message, welcome_role_id
         FROM server_settings
         WHERE guild_id = $1
         "#,
@@ -371,12 +372,14 @@ pub async fn get_welcome_settings(
             message: row
                 .try_get("welcome_message")
                 .unwrap_or_else(|_| "Welcome to {server_name}, {user}".to_string()),
+            role_id: row.try_get("welcome_role_id").ok(),
         })
     } else {
         Ok(WelcomeSettings {
             enabled: false,
             channel_id: None,
             message: "Welcome to {server_name}, {user}".to_string(),
+            role_id: None,
         })
     }
 }
@@ -438,6 +441,27 @@ pub async fn set_welcome_message(
     )
     .bind(guild_id)
     .bind(message)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_welcome_role(
+    pool: &PgPool,
+    guild_id: &str,
+    role_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings (guild_id, welcome_role_id)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET welcome_role_id = $2, updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(role_id)
     .execute(pool)
     .await?;
 
