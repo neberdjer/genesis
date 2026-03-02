@@ -85,10 +85,19 @@ pub async fn handle_member_join(
         .replace("{username}", &member.user.name)
         .replace("{member_count}", &member_count);
 
-    if let Err(e) = channel_id.say(&ctx.http, &message).await {
-        error!(
-            "Failed to send welcome message in channel {}: {}",
-            channel_id, e
-        );
+    let mut allowed_mentions = serenity::CreateAllowedMentions::new();
+
+    allowed_mentions = if settings.message.contains("{user}") {
+				allowed_mentions.users(vec![member.user.id])
+		} else {
+				allowed_mentions.empty_users()
+		};
+
+    let built_message = serenity::CreateMessage::new()
+        .content(&message)
+        .allowed_mentions(allowed_mentions);
+
+    if let Err(e) = channel_id.send_message(&ctx.http, built_message).await {
+        error!("Failed to send welcome message: {}", e);
     }
 }

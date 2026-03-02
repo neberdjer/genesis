@@ -8,7 +8,7 @@ pub async fn welcome(
     ctx: Context<'_>,
     #[description = "Enable or disable welcome messages"] enabled: Option<bool>,
     #[description = "Channel to send welcome messages to"] channel: Option<serenity::GuildChannel>,
-    #[description = "Message template ({server_name}, {user}, {username}, {member_count})"]
+    #[description = "Message template ({server_name}, {user}, {mention}, {username}, {member_count})"]
     message: Option<String>,
     #[description = "Role to assign to new members"] role: Option<serenity::Role>,
 ) -> Result<(), Error> {
