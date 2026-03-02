@@ -91,16 +91,16 @@ pub async fn ban(
         }
         Err(_) => {
             // user is not in server could be banned or just left, check ban list to be sure
-            if let Ok(bans) = guild_id.bans(ctx, None, None).await {
-                if bans.iter().any(|ban| ban.user.id == user.id) {
-                    if is_softban {
-                        ctx.say("User is already banned, cannot perform softban")
-                            .await?;
-                        return Ok(());
-                    } else {
-                        ctx.say("User is already banned").await?;
-                        return Ok(());
-                    }
+            if let Ok(bans) = guild_id.bans(ctx, None, None).await
+                && bans.iter().any(|ban| ban.user.id == user.id)
+            {
+                if is_softban {
+                    ctx.say("User is already banned, cannot perform softban")
+                        .await?;
+                    return Ok(());
+                } else {
+                    ctx.say("User is already banned").await?;
+                    return Ok(());
                 }
             }
         }

@@ -88,7 +88,7 @@ pub fn clean_url(url: &str) -> &str {
     url.split('?')
         .next()
         .unwrap_or(url)
-        .trim_end_matches(|c: char| matches!(c, ',' | ')' | ']' | '}' | ';'))
+        .trim_end_matches([',', ')', ']', '}', ';'])
 }
 
 async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
@@ -248,10 +248,10 @@ fn check_rate_limit(user_id: serenity::UserId) -> bool {
         Err(_) => return true,
     };
 
-    if let Some(last_time) = rate_limit.get(&user_id) {
-        if last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS {
-            return false;
-        }
+    if let Some(last_time) = rate_limit.get(&user_id)
+        && last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS
+    {
+        return false;
     }
 
     rate_limit.insert(user_id, Instant::now());
@@ -306,12 +306,11 @@ async fn handle_commit_diffs_impl(
 
     for &idx in &commit_url_indices {
         if let Some(mut commit) = CommitDiff::parse(clean_url(words[idx])) {
-            if let Some(&next_word) = words.get(idx + 1) {
-                if looks_like_filename(next_word)
-                    && (idx + 1 == words.len() || commit_url_indices.contains(&(idx + 2)))
-                {
-                    commit.file_filter = Some(next_word.to_string());
-                }
+            if let Some(&next_word) = words.get(idx + 1)
+                && looks_like_filename(next_word)
+                && (idx + 1 == words.len() || commit_url_indices.contains(&(idx + 2)))
+            {
+                commit.file_filter = Some(next_word.to_string());
             }
             found_commits.push(commit);
         }
@@ -321,12 +320,12 @@ async fn handle_commit_diffs_impl(
         return;
     }
 
-    if let Some(settings) = settings {
-        if !settings.git_compares_enabled {
-            found_commits.retain(|commit| !commit.is_compare);
-            if found_commits.is_empty() {
-                return;
-            }
+    if let Some(settings) = settings
+        && !settings.git_compares_enabled
+    {
+        found_commits.retain(|commit| !commit.is_compare);
+        if found_commits.is_empty() {
+            return;
         }
     }
 

@@ -24,33 +24,31 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-fn event_handler(
+async fn event_handler(
     ctx: &serenity::Context,
     event: &poise::serenity_prelude::FullEvent,
     _framework: poise::FrameworkContext<'_, Data, Error>,
     data: &Data,
-) -> impl std::future::Future<Output = Result<(), Error>> + Send {
-    async move {
-        match event {
-            poise::serenity_prelude::FullEvent::Message { new_message } => {
-                handle_commit_diffs(ctx, new_message, Some(&data.pool)).await;
-                handle_git_links(ctx, new_message, Some(&data.pool)).await;
-                handle_twitter_links(ctx, new_message, Some(&data.pool)).await;
-                handle_tiktok_links(ctx, new_message, Some(&data.pool)).await;
-                handle_instagram_links(ctx, new_message, Some(&data.pool)).await;
-            }
-            poise::serenity_prelude::FullEvent::InteractionCreate { interaction } => {
-                if let serenity::Interaction::Component(component) = interaction {
-                    handle_diff_pagination(ctx, component).await;
-                }
-            }
-            poise::serenity_prelude::FullEvent::GuildMemberAddition { new_member } => {
-                handle_member_join(ctx, new_member, Some(&data.pool)).await;
-            }
-            _ => {}
+) -> Result<(), Error> {
+    match event {
+        poise::serenity_prelude::FullEvent::Message { new_message } => {
+            handle_commit_diffs(ctx, new_message, Some(&data.pool)).await;
+            handle_git_links(ctx, new_message, Some(&data.pool)).await;
+            handle_twitter_links(ctx, new_message, Some(&data.pool)).await;
+            handle_tiktok_links(ctx, new_message, Some(&data.pool)).await;
+            handle_instagram_links(ctx, new_message, Some(&data.pool)).await;
         }
-        Ok(())
+        poise::serenity_prelude::FullEvent::InteractionCreate {
+            interaction: serenity::Interaction::Component(component),
+        } => {
+            handle_diff_pagination(ctx, component).await;
+        }
+        poise::serenity_prelude::FullEvent::GuildMemberAddition { new_member } => {
+            handle_member_join(ctx, new_member, Some(&data.pool)).await;
+        }
+        _ => {}
     }
+    Ok(())
 }
 
 async fn setup_handler(
@@ -99,7 +97,7 @@ async fn main() -> Result<(), Error> {
         .options(poise::FrameworkOptions {
             commands: commands::all_commands(),
             prefix_options: poise::PrefixFrameworkOptions {
-                prefix: Some(prefix.into()),
+                prefix: Some(prefix),
                 ..Default::default()
             },
             event_handler: |ctx, event, framework, data| {

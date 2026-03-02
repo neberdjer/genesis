@@ -1,6 +1,5 @@
 use crate::constants::MAX_DIFF_CHARS_PER_FILE;
 use regex::Regex;
-use serde_json;
 use std::sync::OnceLock;
 
 static GITHUB_COMMIT_PATTERN: OnceLock<Regex> = OnceLock::new();
@@ -327,7 +326,7 @@ impl CommitDiff {
                     || file_path.ends_with(filter)
                     || file_path
                         .split('/')
-                        .last()
+                        .next_back()
                         .map(|name| name == filter)
                         .unwrap_or(false)
             }
@@ -345,12 +344,8 @@ impl CommitDiff {
         }
 
         if files.is_empty() {
-            if self.file_filter.is_some() {
-                return Err(format!(
-                    "No file matching '{}' found in this commit",
-                    self.file_filter.as_ref().unwrap()
-                )
-                .into());
+            if let Some(filter) = &self.file_filter {
+                return Err(format!("No file matching '{}' found in this commit", filter).into());
             }
             return Err("No files changed in this commit".into());
         }
@@ -359,11 +354,17 @@ impl CommitDiff {
 
         for file in files {
             let stats = format!("+{} -{}", file.additions, file.deletions);
-            let file_name = file.file_path.split('/').last().unwrap_or(&file.file_path);
+            let file_name = file
+                .file_path
+                .split('/')
+                .next_back()
+                .unwrap_or(&file.file_path);
 
             let response = format!(
                 "**{}** `{}`\n```diff\n{}\n```",
-                file_name, stats, file.changes.replace("```", "`\\``")
+                file_name,
+                stats,
+                file.changes.replace("```", "`\\``")
             );
 
             responses.push(response);

@@ -83,10 +83,10 @@ fn check_rate_limit(user_id: serenity::UserId) -> bool {
         Err(_) => return true,
     };
 
-    if let Some(last_time) = rate_limit.get(&user_id) {
-        if last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS {
-            return false;
-        }
+    if let Some(last_time) = rate_limit.get(&user_id)
+        && last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS
+    {
+        return false;
     }
 
     rate_limit.insert(user_id, Instant::now());

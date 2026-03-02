@@ -54,7 +54,7 @@ impl GitFileLink {
             "https://raw.githubusercontent.com/{}/{}/{}/{}",
             owner, repo, commit, path
         );
-        let file_name = path.split('/').last().unwrap_or(path).to_string();
+        let file_name = path.split('/').next_back().unwrap_or(path).to_string();
 
         Some(Self {
             platform: GitPlatform::GitHub,
@@ -81,7 +81,7 @@ impl GitFileLink {
         let end_line = captures.get(6).and_then(|m| m.as_str().parse().ok());
 
         let raw_url = format!("https://{}/{}/-/raw/{}/{}", host, full_path, commit, path);
-        let file_name = path.split('/').last().unwrap_or(path).to_string();
+        let file_name = path.split('/').next_back().unwrap_or(path).to_string();
 
         Some(Self {
             platform: GitPlatform::GitLab,
@@ -112,7 +112,7 @@ impl GitFileLink {
             "https://{}/{}/{}/src/{}/{}",
             host, project, version, crate_name, file_path
         );
-        let file_name = file_path.split('/').last().unwrap_or(file_path);
+        let file_name = file_path.split('/').next_back().unwrap_or(file_path);
 
         Some(Self {
             platform: GitPlatform::RustDoc,
@@ -143,7 +143,7 @@ impl GitFileLink {
             "https://{}/{}/{}/raw/{}/{}",
             host, owner, repo, commit, path
         );
-        let file_name = path.split('/').last().unwrap_or(path).to_string();
+        let file_name = path.split('/').next_back().unwrap_or(path).to_string();
 
         Some(Self {
             platform: GitPlatform::Gitea,
@@ -241,7 +241,7 @@ impl GitFileLink {
         let min_indent = lines
             .iter()
             .filter(|line| !line.trim().is_empty())
-            .filter_map(|line| Some(line.len() - line.trim_start().len()))
+            .map(|line| line.len() - line.trim_start().len())
             .min()
             .unwrap_or(0);
 
@@ -288,7 +288,7 @@ impl GitFileLink {
 
             content.to_string()
         };
-				
+
         Some(Self::unindent(&extracted))
     }
 
@@ -308,7 +308,10 @@ impl GitFileLink {
 
         Ok(format!(
             "**{}:**{}\n```{}\n{}\n```",
-            self.file_name, line_info, language, extracted.replace("```", "`\\``")
+            self.file_name,
+            line_info,
+            language,
+            extracted.replace("```", "`\\``")
         ))
     }
 }

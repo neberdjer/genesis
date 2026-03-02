@@ -36,24 +36,22 @@ pub async fn handle_member_join(
     }
 
     // Assign welcome role if configured
-    if let Some(role_id_str) = &settings.role_id {
-        if let Ok(role_id) = role_id_str.parse::<u64>() {
-            if let Err(e) = ctx
-                .http
-                .add_member_role(
-                    member.guild_id,
-                    member.user.id,
-                    serenity::RoleId::new(role_id),
-                    Some("Welcome role"),
-                )
-                .await
-            {
-                warn!(
-                    "Failed to assign welcome role {} to user {}: {}",
-                    role_id, member.user.id, e
-                );
-            }
-        }
+    if let Some(role_id_str) = &settings.role_id
+        && let Ok(role_id) = role_id_str.parse::<u64>()
+        && let Err(e) = ctx
+            .http
+            .add_member_role(
+                member.guild_id,
+                member.user.id,
+                serenity::RoleId::new(role_id),
+                Some("Welcome role"),
+            )
+            .await
+    {
+        warn!(
+            "Failed to assign welcome role {} to user {}: {}",
+            role_id, member.user.id, e
+        );
     }
 
     // Send welcome message if channel is configured
@@ -85,13 +83,11 @@ pub async fn handle_member_join(
         .replace("{username}", &member.user.name)
         .replace("{member_count}", &member_count);
 
-    let mut allowed_mentions = serenity::CreateAllowedMentions::new();
-
-    allowed_mentions = if settings.message.contains("{user}") {
-				allowed_mentions.users(vec![member.user.id])
-		} else {
-				allowed_mentions.empty_users()
-		};
+    let allowed_mentions = if settings.message.contains("{user}") {
+        serenity::CreateAllowedMentions::new().users(vec![member.user.id])
+    } else {
+        serenity::CreateAllowedMentions::new().empty_users()
+    };
 
     let built_message = serenity::CreateMessage::new()
         .content(&message)
