@@ -119,7 +119,17 @@ async fn main() -> Result<(), Error> {
         | serenity::GatewayIntents::MESSAGE_CONTENT
         | serenity::GatewayIntents::GUILD_MEMBERS;
 
-    let mut client = serenity::ClientBuilder::new(token, intents)
+    let http = serenity::http::HttpBuilder::new(&token)
+        .default_allowed_mentions(
+            serenity::CreateAllowedMentions::new()
+                .replied_user(true)
+                .empty_roles()
+                .empty_users()
+                .everyone(false),
+        )
+        .build();
+
+    let mut client = serenity::ClientBuilder::new_with_http(http, intents)
         .framework(framework)
         .await
         .map_err(|e| {
