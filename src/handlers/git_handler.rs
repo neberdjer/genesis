@@ -288,7 +288,7 @@ impl GitFileLink {
 
             content.to_string()
         };
-
+				
         Some(Self::unindent(&extracted))
     }
 
@@ -308,7 +308,7 @@ impl GitFileLink {
 
         Ok(format!(
             "**{}:**{}\n```{}\n{}\n```",
-            self.file_name, line_info, language, extracted
+            self.file_name, line_info, language, extracted.replace("```", "`\\``")
         ))
     }
 }

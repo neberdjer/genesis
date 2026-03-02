@@ -363,7 +363,7 @@ impl CommitDiff {
 
             let response = format!(
                 "**{}** `{}`\n```diff\n{}\n```",
-                file_name, stats, file.changes
+                file_name, stats, file.changes.replace("```", "`\\``")
             );
 
             responses.push(response);
