@@ -82,10 +82,10 @@ fn check_rate_limit(user_id: serenity::UserId) -> bool {
         Err(_) => return true,
     };
 
-    if let Some(last_time) = rate_limit.get(&user_id) {
-        if last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS {
-            return false;
-        }
+    if let Some(last_time) = rate_limit.get(&user_id)
+        && last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS
+    {
+        return false;
     }
 
     rate_limit.insert(user_id, Instant::now());
@@ -145,15 +145,14 @@ async fn handle_twitter_links_impl(ctx: &serenity::Context, msg: &serenity::Mess
 
                 content.push_str(&format!("\n{}", post.text));
 
-                if let Some(quote_author) = &post.quote_author {
-                    if let (Some(quote_username), Some(quote_text)) =
+                if let Some(quote_author) = &post.quote_author
+                    && let (Some(quote_username), Some(quote_text)) =
                         (&post.quote_username, &post.quote_text)
-                    {
-                        content.push_str(&format!(
-                            "\n\n> **{}** (@{})\n> {}",
-                            quote_author, quote_username, quote_text
-                        ));
-                    }
+                {
+                    content.push_str(&format!(
+                        "\n\n> **{}** (@{})\n> {}",
+                        quote_author, quote_username, quote_text
+                    ));
                 }
 
                 let mut container_components = vec![json!({

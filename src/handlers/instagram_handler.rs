@@ -26,12 +26,11 @@ impl InstagramPost {
         let img_index = if let Some(query_start) = url.find('?') {
             let query = &url[query_start + 1..];
             for param in query.split('&') {
-                if let Some((key, value)) = param.split_once('=') {
-                    if key == "img_index" {
-                        if let Ok(index) = value.parse::<usize>() {
-                            return Some((post_id, Some(index)));
-                        }
-                    }
+                if let Some((key, value)) = param.split_once('=')
+                    && key == "img_index"
+                    && let Ok(index) = value.parse::<usize>()
+                {
+                    return Some((post_id, Some(index)));
                 }
             }
             None
@@ -72,10 +71,10 @@ impl InstagramPost {
 
             match result {
                 Ok(response) => {
-                    if let Ok(json) = response.into_json::<Value>() {
-                        if let Ok(post) = Self::parse_graphql_response(&json, img_index) {
-                            return Ok(post);
-                        }
+                    if let Ok(json) = response.into_json::<Value>()
+                        && let Ok(post) = Self::parse_graphql_response(&json, img_index)
+                    {
+                        return Ok(post);
                     }
                 }
                 Err(e) => {

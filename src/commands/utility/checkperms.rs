@@ -7,21 +7,15 @@ pub async fn checkperms(ctx: crate::Context<'_>) -> Result<(), crate::Error> {
         .serenity_context()
         .cache
         .guild(guild_id)
-        .map(|guild| {
+        .and_then(|guild| {
             let member = guild
                 .members
-                .get(&ctx.serenity_context().cache.current_user().id);
-            if let Some(member) = member {
-                if let Some(channel) = guild.channels.get(&channel_id) {
-                    Some(guild.user_permissions_in(channel, member))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .flatten();
+                .get(&ctx.serenity_context().cache.current_user().id)?;
+            guild
+                .channels
+                .get(&channel_id)
+                .map(|channel| guild.user_permissions_in(channel, member))
+        });
 
     if let Some(permissions) = permission_result {
         let response = format!(

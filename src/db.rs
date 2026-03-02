@@ -66,23 +66,21 @@ async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
 
     match fs::read_dir(migrations_dir) {
         Ok(entries) => {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    if path.extension().and_then(|s| s.to_str()) == Some("sql") {
-                        if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-                            migration_files.push(file_name.to_string());
-                        }
-                    }
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("sql")
+                    && let Some(file_name) = path.file_name().and_then(|s| s.to_str())
+                {
+                    migration_files.push(file_name.to_string());
                 }
             }
         }
         Err(e) => {
             error!("Failed to read migrations directory: {}", e);
-            return Err(sqlx::Error::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to read migrations directory: {}", e),
-            )));
+            return Err(sqlx::Error::Io(std::io::Error::other(format!(
+                "Failed to read migrations directory: {}",
+                e
+            ))));
         }
     }
 
