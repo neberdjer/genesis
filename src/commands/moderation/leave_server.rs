@@ -1,16 +1,8 @@
 use crate::{Context, Error};
 use poise::serenity_prelude as serenity;
-use std::env;
 use tracing::info;
 
-async fn check_owner(ctx: Context<'_>) -> Result<bool, Error> {
-    let owner_id = env::var("OWNER_ID")
-        .ok()
-        .and_then(|id| id.parse::<u64>().ok())
-        .map(serenity::UserId::new)
-        .ok_or("OWNER_ID not configured")?;
-    Ok(ctx.author().id == owner_id)
-}
+use super::check_owner;
 
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 pub async fn leave_server(
@@ -39,7 +31,7 @@ pub async fn leave_server(
             .await?;
         }
         Err(_) => {
-            ctx.say(format!("Could not find server with ID **{}**", guild_id))
+            ctx.say(format!("Failed to find server with ID **{}**", guild_id))
                 .await?;
         }
     }

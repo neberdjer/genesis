@@ -7,7 +7,9 @@ use crate::{Context, Error};
     required_permissions = "ADMINISTRATOR",
     subcommands("toggle")
 )]
-pub async fn settings(_ctx: Context<'_>) -> Result<(), Error> {
+pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.say("Usage: `/settings toggle <service> <enabled>`")
+        .await?;
     Ok(())
 }
 

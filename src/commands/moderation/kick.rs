@@ -3,7 +3,12 @@ use poise::serenity_prelude as serenity;
 use tracing::info;
 
 /// Kick a user from the server
-#[poise::command(slash_command, prefix_command, required_permissions = "KICK_MEMBERS")]
+#[poise::command(
+    slash_command,
+    prefix_command,
+    guild_only,
+    required_permissions = "KICK_MEMBERS"
+)]
 pub async fn kick(
     ctx: Context<'_>,
     #[description = "User to kick"] user: serenity::User,
@@ -13,13 +18,11 @@ pub async fn kick(
         .guild_id()
         .ok_or("This command can only be used in a server")?;
 
-    // check if trying to kick yourself
     if user.id == ctx.author().id {
         ctx.say("You cannot kick yourself").await?;
         return Ok(());
     }
 
-    // check if trying to kick the bot
     if user.id == ctx.framework().bot_id {
         ctx.say("Fine, I'll leave...").await?;
 
@@ -36,48 +39,26 @@ pub async fn kick(
         return Ok(());
     }
 
-    // check if target user can be kicked (role hierarchy check)
     if let Ok(target_member) = guild_id.member(ctx, user.id).await {
         let author_member = guild_id.member(ctx, ctx.author().id).await?;
         let bot_member = guild_id.member(ctx, ctx.framework().bot_id).await?;
 
-        // check if target is server owner first
         let guild = guild_id.to_partial_guild(ctx).await?;
         if target_member.user.id == guild.owner_id {
             ctx.say("Cannot kick the server owner").await?;
             return Ok(());
         }
 
-        // get highest role positions using simple comparison
-        let mut target_highest = 0;
-        for role_id in &target_member.roles {
-            if let Ok(role) = guild_id.role(ctx, *role_id).await {
-                target_highest = target_highest.max(role.position);
-            }
-        }
+        let target_highest = super::get_highest_role(ctx, guild_id, &target_member).await;
+        let author_highest = super::get_highest_role(ctx, guild_id, &author_member).await;
+        let bot_highest = super::get_highest_role(ctx, guild_id, &bot_member).await;
 
-        let mut author_highest = 0;
-        for role_id in &author_member.roles {
-            if let Ok(role) = guild_id.role(ctx, *role_id).await {
-                author_highest = author_highest.max(role.position);
-            }
-        }
-
-        let mut bot_highest = 0;
-        for role_id in &bot_member.roles {
-            if let Ok(role) = guild_id.role(ctx, *role_id).await {
-                bot_highest = bot_highest.max(role.position);
-            }
-        }
-
-        // check if target has higher role than command author
         if target_highest >= author_highest {
             ctx.say("Cannot kick this user - they have equal or higher role than you")
                 .await?;
             return Ok(());
         }
 
-        // check if target has higher role than bot
         if target_highest >= bot_highest {
             ctx.say("Cannot kick this user - they have equal or higher role than me")
                 .await?;

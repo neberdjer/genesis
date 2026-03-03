@@ -44,7 +44,6 @@ impl TikTokPost {
         let captures = pattern.captures(url)?;
         let video_id = captures.get(1)?.as_str();
 
-        // Normalize to vm.tiktok.com format which the API handles well
         Some(format!("https://vm.tiktok.com/{}", video_id))
     }
 

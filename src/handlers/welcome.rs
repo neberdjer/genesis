@@ -35,7 +35,6 @@ pub async fn handle_member_join(
         return;
     }
 
-    // Assign welcome role if configured
     if let Some(role_id_str) = &settings.role_id
         && let Ok(role_id) = role_id_str.parse::<u64>()
         && let Err(e) = ctx
@@ -54,7 +53,6 @@ pub async fn handle_member_join(
         );
     }
 
-    // Send welcome message if channel is configured
     let Some(channel_id_str) = settings.channel_id else {
         return;
     };

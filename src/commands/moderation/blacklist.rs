@@ -1,17 +1,9 @@
 use crate::db;
 use crate::{Context, Error};
 use poise::serenity_prelude as serenity;
-use std::env;
 use tracing::info;
 
-async fn check_owner(ctx: Context<'_>) -> Result<bool, Error> {
-    let owner_id = env::var("OWNER_ID")
-        .ok()
-        .and_then(|id| id.parse::<u64>().ok())
-        .map(serenity::UserId::new)
-        .ok_or("OWNER_ID not configured")?;
-    Ok(ctx.author().id == owner_id)
-}
+use super::check_owner;
 
 #[poise::command(
     slash_command,
@@ -19,7 +11,8 @@ async fn check_owner(ctx: Context<'_>) -> Result<bool, Error> {
     check = "check_owner",
     subcommands("add", "remove", "add_server", "remove_server")
 )]
-pub async fn blacklist(_ctx: Context<'_>) -> Result<(), Error> {
+pub async fn blacklist(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.say("Usage: `/blacklist add`, `/blacklist remove`, `/blacklist add_server`, `/blacklist remove_server`").await?;
     Ok(())
 }
 
