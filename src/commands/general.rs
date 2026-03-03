@@ -31,7 +31,6 @@ pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
 
 #[poise::command(slash_command, prefix_command)]
 pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
-    let start = std::time::Instant::now();
     let pool = &ctx.data().pool;
 
     let cache = ctx.cache();
@@ -68,15 +67,13 @@ pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
     let blacklisted_servers = db::count_blacklisted_servers(pool).await.unwrap_or(0);
     let configured_servers = db::count_configured_servers(pool).await.unwrap_or(0);
 
-    let latency = start.elapsed();
-
     let response = format!(
         "**Genesis Stats**\n\
          Servers: **{}** | Users: **{}** | Channels: **{}**\n\
          Uptime: **{}**\n\
          Configured Servers: **{}**\n\
          Blacklisted Users: **{}** | Blacklisted Servers: **{}**\n\
-         Latency: **{}ms** | Version: **{}**",
+         Version: **{}**",
         guild_count,
         user_count,
         channel_count,
@@ -84,7 +81,6 @@ pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
         configured_servers,
         blacklisted_users,
         blacklisted_servers,
-        latency.as_millis(),
         env!("CARGO_PKG_VERSION"),
     );
 

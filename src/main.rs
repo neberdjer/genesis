@@ -10,7 +10,7 @@ use handlers::{
 };
 use poise::serenity_prelude as serenity;
 use std::env;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -51,6 +51,55 @@ async fn event_handler(
         _ => {}
     }
     Ok(())
+}
+
+async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
+    match error {
+        poise::FrameworkError::Command { error, ctx, .. } => {
+            error!("Command '{}' failed: {}", ctx.command().name, error);
+            let _ = ctx.say(format!("An error occurred: {}", error)).await;
+        }
+        poise::FrameworkError::MissingBotPermissions {
+            missing_permissions,
+            ctx,
+            ..
+        } => {
+            warn!(
+                "Missing permissions for '{}': {}",
+                ctx.command().name,
+                missing_permissions
+            );
+            let _ = ctx
+                .say(format!(
+                    "I'm missing permissions: **{}**",
+                    missing_permissions
+                ))
+                .await;
+        }
+        poise::FrameworkError::MissingUserPermissions {
+            missing_permissions,
+            ctx,
+            ..
+        } => {
+            let perms = missing_permissions
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let _ = ctx
+                .say(format!("You're missing permissions: **{}**", perms))
+                .await;
+        }
+        poise::FrameworkError::CommandCheckFailed { error, ctx, .. } => {
+            if let Some(error) = error {
+                error!("Check failed for '{}': {}", ctx.command().name, error);
+                let _ = ctx.say(format!("Check failed: {}", error)).await;
+            }
+        }
+        other => {
+            if let Err(e) = poise::builtins::on_error(other).await {
+                error!("Unhandled error handler failure: {}", e);
+            }
+        }
+    }
 }
 
 async fn setup_handler(
@@ -106,6 +155,7 @@ async fn main() -> Result<(), Error> {
             event_handler: |ctx, event, framework, data| {
                 Box::pin(event_handler(ctx, event, framework, data))
             },
+            on_error: |error| Box::pin(on_error(error)),
             ..Default::default()
         })
         .setup(move |ctx, ready, framework| {
