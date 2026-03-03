@@ -10,6 +10,7 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
     let mut commands = Vec::new();
 
     commands.push(general::ping());
+    commands.push(general::stats());
     commands.extend(moderation::commands());
     commands.extend(utility::commands());
     commands.push(settings::settings());

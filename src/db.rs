@@ -348,6 +348,24 @@ pub async fn remove_server_from_blacklist(
     Ok(result.rows_affected() > 0)
 }
 
+pub async fn count_blacklisted_users(pool: &PgPool) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM user_blacklist")
+        .fetch_one(pool)
+        .await
+}
+
+pub async fn count_blacklisted_servers(pool: &PgPool) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM server_blacklist")
+        .fetch_one(pool)
+        .await
+}
+
+pub async fn count_configured_servers(pool: &PgPool) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM server_settings")
+        .fetch_one(pool)
+        .await
+}
+
 pub async fn get_welcome_settings(
     pool: &PgPool,
     guild_id: &str,

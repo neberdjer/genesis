@@ -14,10 +14,12 @@ use tracing::{error, info};
 
 use sqlx::PgPool;
 use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Clone)]
 pub struct Data {
     pub pool: Arc<PgPool>,
+    pub start_time: Instant,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -88,6 +90,7 @@ async fn main() -> Result<(), Error> {
 
     let data = Data {
         pool: Arc::new(pool),
+        start_time: Instant::now(),
     };
 
     let env_clone = environment.clone();
