@@ -16,7 +16,6 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Instant;
 
-#[derive(Clone)]
 pub struct Data {
     pub pool: Arc<PgPool>,
     pub start_time: Instant,
@@ -26,31 +25,32 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-async fn event_handler(
-    ctx: &serenity::Context,
-    event: &poise::serenity_prelude::FullEvent,
-    _framework: poise::FrameworkContext<'_, Data, Error>,
-    data: &Data,
-) -> Result<(), Error> {
-    match event {
-        poise::serenity_prelude::FullEvent::Message { new_message } => {
-            handle_commit_diffs(ctx, new_message, Some(&data.pool)).await;
-            handle_git_links(ctx, new_message, Some(&data.pool)).await;
-            handle_twitter_links(ctx, new_message, Some(&data.pool)).await;
-            handle_tiktok_links(ctx, new_message, Some(&data.pool)).await;
-            handle_instagram_links(ctx, new_message, Some(&data.pool)).await;
+struct Handler;
+
+#[async_trait::async_trait]
+impl serenity::EventHandler for Handler {
+    async fn dispatch(&self, ctx: &serenity::Context, event: &serenity::FullEvent) {
+        let data = ctx.data::<Data>();
+        match event {
+            serenity::FullEvent::Message { new_message, .. } => {
+                handle_commit_diffs(ctx, new_message, Some(&data.pool)).await;
+                handle_git_links(ctx, new_message, Some(&data.pool)).await;
+                handle_twitter_links(ctx, new_message, Some(&data.pool)).await;
+                handle_tiktok_links(ctx, new_message, Some(&data.pool)).await;
+                handle_instagram_links(ctx, new_message, Some(&data.pool)).await;
+            }
+            serenity::FullEvent::InteractionCreate {
+                interaction: serenity::Interaction::Component(component),
+                ..
+            } => {
+                handle_diff_pagination(ctx, component).await;
+            }
+            serenity::FullEvent::GuildMemberAddition { new_member, .. } => {
+                handle_member_join(ctx, new_member, Some(&data.pool)).await;
+            }
+            _ => {}
         }
-        poise::serenity_prelude::FullEvent::InteractionCreate {
-            interaction: serenity::Interaction::Component(component),
-        } => {
-            handle_diff_pagination(ctx, component).await;
-        }
-        poise::serenity_prelude::FullEvent::GuildMemberAddition { new_member } => {
-            handle_member_join(ctx, new_member, Some(&data.pool)).await;
-        }
-        _ => {}
     }
-    Ok(())
 }
 
 async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
@@ -102,34 +102,23 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
-async fn setup_handler(
-    ctx: &serenity::Context,
-    ready: &serenity::Ready,
-    framework: &poise::Framework<Data, Error>,
-    environment: String,
-    prefix: String,
-    data: Data,
-) -> Result<Data, Error> {
-    info!(
-        "Bot connected as {} in {} mode with prefix '{}'",
-        ready.user.name, environment, prefix
-    );
-    info!(
-        "Registering {} commands globally",
-        framework.options().commands.len()
-    );
-    poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-    info!("Commands registered successfully");
-    Ok(data)
+#[poise::command(prefix_command)]
+async fn register_commands(ctx: Context<'_>) -> Result<(), Error> {
+    let commands = &ctx.framework().options().commands;
+    poise::builtins::register_globally(ctx.http(), commands).await?;
+    ctx.say("Commands registered globally").await?;
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     dotenv::dotenv().ok();
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
     tracing_subscriber::fmt::init();
 
     let environment = env::var("ENVIRONMENT").unwrap_or_else(|_| DEFAULT_ENVIRONMENT.to_string());
-    let token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKEN not found");
     let prefix = env::var("PREFIX").unwrap_or_else(|_| DEFAULT_PREFIX.to_string());
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL not found");
@@ -137,51 +126,40 @@ async fn main() -> Result<(), Error> {
     let pool = db::connect(&database_url).await?;
     info!("Database connected and migrations applied successfully");
 
+    info!(
+        "Starting bot in {} mode with prefix '{}'",
+        environment, prefix
+    );
+
     let data = Data {
         pool: Arc::new(pool),
         start_time: Instant::now(),
     };
 
-    let env_clone = environment.clone();
-    let prefix_clone = prefix.clone();
+    let mut all_commands = commands::all_commands();
+    all_commands.push(register_commands());
 
-    let framework = poise::Framework::<Data, Error>::builder()
-        .options(poise::FrameworkOptions {
-            commands: commands::all_commands(),
-            prefix_options: poise::PrefixFrameworkOptions {
-                prefix: Some(prefix),
-                ..Default::default()
-            },
-            event_handler: |ctx, event, framework, data| {
-                Box::pin(event_handler(ctx, event, framework, data))
-            },
-            on_error: |error| Box::pin(on_error(error)),
+    let options = poise::FrameworkOptions {
+        commands: all_commands,
+        prefix_options: poise::PrefixFrameworkOptions {
+            prefix: Some(prefix.into()),
             ..Default::default()
-        })
-        .setup(move |ctx, ready, framework| {
-            let env = env_clone.clone();
-            let pref = prefix_clone.clone();
-            let data_clone = data.clone();
-            Box::pin(setup_handler(ctx, ready, framework, env, pref, data_clone))
-        })
-        .build();
+        },
+        on_error: |error| Box::pin(on_error(error)),
+        ..Default::default()
+    };
+
+    let token =
+        serenity::Token::from_env("DISCORD_TOKEN").expect("DISCORD_TOKEN not found or invalid");
 
     let intents = serenity::GatewayIntents::non_privileged()
         | serenity::GatewayIntents::MESSAGE_CONTENT
         | serenity::GatewayIntents::GUILD_MEMBERS;
 
-    let http = serenity::http::HttpBuilder::new(&token)
-        .default_allowed_mentions(
-            serenity::CreateAllowedMentions::new()
-                .replied_user(true)
-                .empty_roles()
-                .empty_users()
-                .everyone(false),
-        )
-        .build();
-
-    let mut client = serenity::ClientBuilder::new_with_http(http, intents)
-        .framework(framework)
+    let mut client = serenity::ClientBuilder::new(token, intents)
+        .framework(Box::new(poise::Framework::new(options)))
+        .event_handler(Arc::new(Handler))
+        .data(Arc::new(data) as _)
         .await
         .map_err(|e| {
             error!("Failed to create client: {}", e);

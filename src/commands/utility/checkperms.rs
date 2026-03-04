@@ -1,3 +1,5 @@
+use poise::serenity_prelude as serenity;
+
 #[poise::command(slash_command, guild_only)]
 pub async fn checkperms(ctx: crate::Context<'_>) -> Result<(), crate::Error> {
     let guild_id = ctx.guild_id().ok_or("Not in a guild")?;
@@ -13,7 +15,7 @@ pub async fn checkperms(ctx: crate::Context<'_>) -> Result<(), crate::Error> {
                 .get(&ctx.serenity_context().cache.current_user().id)?;
             guild
                 .channels
-                .get(&channel_id)
+                .get(&serenity::ChannelId::new(channel_id.get()))
                 .map(|channel| guild.user_permissions_in(channel, member))
         });
 

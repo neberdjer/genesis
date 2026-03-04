@@ -47,7 +47,7 @@ pub async fn handle_instagram_links(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    if msg.author.bot {
+    if msg.author.bot() {
         return;
     }
 

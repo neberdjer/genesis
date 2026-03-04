@@ -46,7 +46,7 @@ pub async fn handle_twitter_links(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    if msg.author.bot {
+    if msg.author.bot() {
         return;
     }
 

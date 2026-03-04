@@ -19,20 +19,21 @@ pub async fn ban(
     let guild_id = ctx
         .guild_id()
         .ok_or("This command can only be used in a server")?;
+    let http = ctx.http();
 
     if user.id == ctx.author().id {
         ctx.say("You cannot ban yourself").await?;
         return Ok(());
     }
 
-    if user.id == ctx.framework().bot_id {
+    if user.id == ctx.framework().bot_id() {
         ctx.say("You cannot ban me").await?;
         return Ok(());
     }
 
     if let Ok(target_member) = guild_id.member(ctx, user.id).await {
         let author_member = guild_id.member(ctx, ctx.author().id).await?;
-        let bot_member = guild_id.member(ctx, ctx.framework().bot_id).await?;
+        let bot_member = guild_id.member(ctx, ctx.framework().bot_id()).await?;
 
         let guild = guild_id.to_partial_guild(ctx).await?;
         if target_member.user.id == guild.owner_id {
@@ -69,7 +70,7 @@ pub async fn ban(
     match guild_id.member(ctx, user.id).await {
         Ok(_) => {}
         Err(_) => {
-            if let Ok(bans) = guild_id.bans(ctx, None, None).await
+            if let Ok(bans) = guild_id.bans(http, None, None).await
                 && bans.iter().any(|ban| ban.user.id == user.id)
             {
                 if is_softban {
@@ -85,7 +86,7 @@ pub async fn ban(
     }
 
     match guild_id
-        .ban_with_reason(ctx, user.id, delete_days, ban_reason)
+        .ban(http, user.id, delete_days as u32, Some(ban_reason))
         .await
     {
         Ok(_) => {
@@ -102,7 +103,7 @@ pub async fn ban(
             );
 
             if is_softban {
-                match guild_id.unban(ctx, user.id).await {
+                match guild_id.unban(http, user.id, Some("Softban")).await {
                     Ok(_) => {
                         ctx.say(format!(
                             "**Softbanned** {} ({})\n**Reason:** {}\n**Messages deleted:** {} days",

@@ -28,10 +28,10 @@ pub(super) async fn get_highest_role(
     ctx: Context<'_>,
     guild_id: serenity::GuildId,
     member: &serenity::Member,
-) -> u16 {
+) -> i16 {
     let mut highest = 0;
     for role_id in &member.roles {
-        if let Ok(role) = guild_id.role(ctx, *role_id).await {
+        if let Ok(role) = guild_id.role(ctx.http(), *role_id).await {
             highest = highest.max(role.position);
         }
     }

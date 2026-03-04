@@ -1,5 +1,6 @@
 use crate::db;
 use crate::{Context, Error};
+use poise::serenity_prelude as serenity;
 
 #[poise::command(
     slash_command,
@@ -36,20 +37,25 @@ async fn toggle(
     Ok(())
 }
 
-#[allow(dead_code)]
+#[allow(clippy::unused_async)]
 async fn autocomplete_service<'a>(
     _ctx: Context<'_>,
     partial: &'a str,
-) -> impl Iterator<Item = String> + 'a {
-    [
+) -> serenity::CreateAutocompleteResponse<'a> {
+    let services = [
         "git_diffs",
         "git_compares",
         "git_links",
         "twitter",
         "tiktok",
         "instagram",
-    ]
-    .iter()
-    .filter(move |name| name.starts_with(partial))
-    .map(|name| name.to_string())
+    ];
+
+    let choices: Vec<_> = services
+        .iter()
+        .filter(|name| name.starts_with(partial))
+        .map(|name| serenity::AutocompleteChoice::from(*name))
+        .collect();
+
+    serenity::CreateAutocompleteResponse::new().set_choices(choices)
 }

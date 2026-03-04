@@ -15,7 +15,7 @@ pub async fn leave_server(
     match ctx.serenity_context().http.get_guild(guild_id_obj).await {
         Ok(guild) => {
             let guild_name = guild.name.clone();
-            guild_id_obj.leave(ctx.serenity_context()).await?;
+            guild_id_obj.leave(ctx.http()).await?;
 
             info!(
                 "Left server {} ({}) by owner command from {}",

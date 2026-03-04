@@ -23,10 +23,10 @@ pub async fn kick(
         return Ok(());
     }
 
-    if user.id == ctx.framework().bot_id {
+    if user.id == ctx.framework().bot_id() {
         ctx.say("Fine, I'll leave...").await?;
 
-        if let Err(e) = guild_id.leave(ctx).await {
+        if let Err(e) = guild_id.leave(ctx.http()).await {
             ctx.say(format!("Failed to leave server: {}", e)).await?;
         } else {
             info!(
@@ -41,7 +41,7 @@ pub async fn kick(
 
     if let Ok(target_member) = guild_id.member(ctx, user.id).await {
         let author_member = guild_id.member(ctx, ctx.author().id).await?;
-        let bot_member = guild_id.member(ctx, ctx.framework().bot_id).await?;
+        let bot_member = guild_id.member(ctx, ctx.framework().bot_id()).await?;
 
         let guild = guild_id.to_partial_guild(ctx).await?;
         if target_member.user.id == guild.owner_id {
@@ -71,7 +71,7 @@ pub async fn kick(
 
     let kick_reason = reason.as_deref().unwrap_or("No reason provided");
 
-    match guild_id.kick_with_reason(ctx, user.id, kick_reason).await {
+    match guild_id.kick(ctx.http(), user.id, Some(kick_reason)).await {
         Ok(_) => {
             info!(
                 "KICK performed by {} on user {} (ID: {}). Reason: {}",

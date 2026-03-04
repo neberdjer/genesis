@@ -114,7 +114,7 @@ fn create_pagination_buttons(
     current_page: usize,
     total_pages: usize,
     commit: &CommitDiff,
-) -> serenity::CreateActionRow {
+) -> serenity::CreateActionRow<'_> {
     let platform_prefix = match commit.platform {
         super::git_diff_handler::GitPlatform::GitHub => "gh",
         super::git_diff_handler::GitPlatform::GitLab => "gl",
@@ -163,7 +163,7 @@ fn create_pagination_buttons(
     .style(serenity::ButtonStyle::Primary)
     .disabled(current_page >= total_pages - 1);
 
-    serenity::CreateActionRow::Buttons(vec![prev_button, page_info, next_button])
+    serenity::CreateActionRow::Buttons(vec![prev_button, page_info, next_button].into())
 }
 
 async fn send_paginated_diff(
@@ -190,7 +190,8 @@ async fn send_paginated_diff(
 
     if total_pages > 1 {
         let buttons = create_pagination_buttons(0, total_pages, commit);
-        message_builder = message_builder.components(vec![buttons]);
+        message_builder =
+            message_builder.components(vec![serenity::CreateComponent::ActionRow(buttons)]);
     }
 
     if let Err(e) = msg
@@ -207,7 +208,7 @@ pub async fn handle_commit_diffs(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    if msg.author.bot {
+    if msg.author.bot() {
         return;
     }
 
@@ -461,7 +462,7 @@ pub async fn handle_diff_pagination(
     let response = serenity::CreateInteractionResponse::UpdateMessage(
         serenity::CreateInteractionResponseMessage::new()
             .content(page_content)
-            .components(vec![buttons]),
+            .components(vec![serenity::CreateComponent::ActionRow(buttons)]),
     );
 
     if let Err(e) = interaction.create_response(&ctx.http, response).await {

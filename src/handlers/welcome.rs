@@ -91,7 +91,11 @@ pub async fn handle_member_join(
         .content(&message)
         .allowed_mentions(allowed_mentions);
 
-    if let Err(e) = channel_id.send_message(&ctx.http, built_message).await {
+    if let Err(e) = channel_id
+        .widen()
+        .send_message(&ctx.http, built_message)
+        .await
+    {
         error!("Failed to send welcome message: {}", e);
     }
 }
