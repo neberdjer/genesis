@@ -2,6 +2,7 @@ use super::tiktok_handler::TikTokPost;
 use poise::serenity_prelude as serenity;
 use serde_json::json;
 use std::collections::HashMap;
+use std::io::Read as _;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
@@ -10,6 +11,27 @@ use crate::db;
 use sqlx::PgPool;
 
 const EMBED_SUPPRESS_DELAY_MS: u64 = 500;
+
+fn download_media(url: &str) -> Option<Vec<u8>> {
+    let response = ureq::get(url)
+        .set("User-Agent", "Mozilla/5.0 (compatible; GenesisBot/1.0)")
+        .call()
+        .ok()?;
+    let mut bytes = Vec::new();
+    response.into_reader().read_to_end(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+fn media_filename(index: usize, url: &str) -> String {
+    let ext = if url.contains(".mp4") || url.contains("video") {
+        "mp4"
+    } else if url.contains(".webp") {
+        "webp"
+    } else {
+        "jpg"
+    };
+    format!("tiktok_{}.{}", index, ext)
+}
 static RATE_LIMIT: OnceLock<Mutex<HashMap<serenity::UserId, Instant>>> = OnceLock::new();
 
 const RATE_LIMIT_SECONDS: u64 = 10;
@@ -125,10 +147,8 @@ async fn handle_tiktok_links_impl(ctx: &serenity::Context, msg: &serenity::Messa
         return;
     }
 
-    debug!("Suppressing embeds");
-    suppress_embeds(ctx, msg).await;
-
     debug!("Processing {} TikTok videos", found_videos.len());
+    let mut any_sent = false;
     for video_url in found_videos {
         debug!("Fetching TikTok: url={}", video_url);
         match TikTokPost::fetch(&video_url) {
@@ -144,25 +164,32 @@ async fn handle_tiktok_links_impl(ctx: &serenity::Context, msg: &serenity::Messa
                     "content": content
                 })];
 
+                let mut attachments = Vec::new();
                 if !post.media.is_empty() {
-                    debug!("Adding {} media items to payload", post.media.len());
-                    let media_items: Vec<_> = post
-                        .media
-                        .iter()
-                        .map(|url| {
-                            debug!("Media URL: {}", url);
-                            json!({
+                    debug!("Downloading {} media items", post.media.len());
+                    let mut media_items = Vec::new();
+                    for (i, url) in post.media.iter().enumerate() {
+                        let filename = media_filename(i, url);
+                        if let Some(data) = download_media(url) {
+                            debug!("Downloaded {} ({} bytes)", filename, data.len());
+                            attachments
+                                .push(serenity::CreateAttachment::bytes(data, filename.clone()));
+                            media_items.push(json!({
                                 "media": {
-                                    "url": url
+                                    "url": format!("attachment://{}", filename)
                                 }
-                            })
-                        })
-                        .collect();
+                            }));
+                        } else {
+                            warn!("Failed to download media: {}", url);
+                        }
+                    }
 
-                    container_components.push(json!({
-                        "type": 12,
-                        "items": media_items
-                    }));
+                    if !media_items.is_empty() {
+                        container_components.push(json!({
+                            "type": 12,
+                            "items": media_items
+                        }));
+                    }
                 }
 
                 let payload = json!({
@@ -178,12 +205,21 @@ async fn handle_tiktok_links_impl(ctx: &serenity::Context, msg: &serenity::Messa
                 });
 
                 debug!("Sending TikTok message to channel {}", msg.channel_id);
-                let _ = ctx
+                match ctx
                     .http
-                    .send_message(msg.channel_id, vec![], &payload)
-                    .await;
+                    .send_message(msg.channel_id, attachments, &payload)
+                    .await
+                {
+                    Ok(_) => any_sent = true,
+                    Err(e) => warn!("Failed to send TikTok message: {}", e),
+                }
             }
             Err(e) => warn!("Failed to fetch TikTok {}: {}", video_url, e),
         }
+    }
+
+    if any_sent {
+        debug!("Suppressing embeds");
+        suppress_embeds(ctx, msg).await;
     }
 }
