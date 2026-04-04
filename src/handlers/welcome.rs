@@ -81,11 +81,12 @@ pub async fn handle_member_join(
         .replace("{username}", &member.user.name)
         .replace("{member_count}", &member_count);
 
-    let allowed_mentions = if settings.message.contains("{user}") {
-        serenity::CreateAllowedMentions::new().users(vec![member.user.id])
-    } else {
-        serenity::CreateAllowedMentions::new().empty_users()
-    };
+    let allowed_mentions =
+        if settings.message.contains("{user}") || settings.message.contains("{mention}") {
+            serenity::CreateAllowedMentions::new().users(vec![member.user.id])
+        } else {
+            serenity::CreateAllowedMentions::new().empty_users()
+        };
 
     let built_message = serenity::CreateMessage::new()
         .content(&message)

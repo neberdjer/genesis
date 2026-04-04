@@ -16,24 +16,23 @@ pub fn commands() -> Vec<poise::Command<Data, crate::Error>> {
 }
 
 pub(super) async fn check_owner(ctx: Context<'_>) -> Result<bool, Error> {
-    let owner_id = std::env::var("OWNER_ID")
-        .ok()
-        .and_then(|id| id.parse::<u64>().ok())
-        .map(serenity::UserId::new)
-        .ok_or("OWNER_ID not configured")?;
+    let owner_id = ctx.data().owner_id.ok_or("OWNER_ID not configured")?;
     Ok(ctx.author().id == owner_id)
 }
 
-pub(super) async fn get_highest_role(
+pub(super) fn get_highest_role(
     ctx: Context<'_>,
     guild_id: serenity::GuildId,
     member: &serenity::Member,
 ) -> i16 {
-    let mut highest = 0;
-    for role_id in &member.roles {
-        if let Ok(role) = guild_id.role(ctx.http(), *role_id).await {
-            highest = highest.max(role.position);
-        }
-    }
-    highest
+    let Some(guild) = ctx.cache().guild(guild_id) else {
+        return 0;
+    };
+    member
+        .roles
+        .iter()
+        .filter_map(|role_id| guild.roles.get(role_id))
+        .map(|role| role.position)
+        .max()
+        .unwrap_or(0)
 }

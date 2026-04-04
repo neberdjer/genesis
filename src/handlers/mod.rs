@@ -1,6 +1,7 @@
 mod git_diff_handler;
 mod git_handler;
 mod instagram_handler;
+pub(crate) mod shared;
 mod tiktok_handler;
 mod twitter_handler;
 

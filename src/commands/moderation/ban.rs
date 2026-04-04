@@ -31,32 +31,36 @@ pub async fn ban(
         return Ok(());
     }
 
-    if let Ok(target_member) = guild_id.member(ctx, user.id).await {
-        let author_member = guild_id.member(ctx, ctx.author().id).await?;
-        let bot_member = guild_id.member(ctx, ctx.framework().bot_id()).await?;
+    let is_member = match guild_id.member(ctx, user.id).await {
+        Ok(target_member) => {
+            let author_member = guild_id.member(ctx, ctx.author().id).await?;
+            let bot_member = guild_id.member(ctx, ctx.framework().bot_id()).await?;
 
-        let guild = guild_id.to_partial_guild(ctx).await?;
-        if target_member.user.id == guild.owner_id {
-            ctx.say("Cannot ban the server owner").await?;
-            return Ok(());
+            let guild = guild_id.to_partial_guild(ctx).await?;
+            if target_member.user.id == guild.owner_id {
+                ctx.say("Cannot ban the server owner").await?;
+                return Ok(());
+            }
+
+            let target_highest = super::get_highest_role(ctx, guild_id, &target_member);
+            let author_highest = super::get_highest_role(ctx, guild_id, &author_member);
+            let bot_highest = super::get_highest_role(ctx, guild_id, &bot_member);
+
+            if target_highest >= author_highest {
+                ctx.say("Cannot ban this user - they have equal or higher role than you")
+                    .await?;
+                return Ok(());
+            }
+
+            if target_highest >= bot_highest {
+                ctx.say("Cannot ban this user - they have equal or higher role than me")
+                    .await?;
+                return Ok(());
+            }
+            true
         }
-
-        let target_highest = super::get_highest_role(ctx, guild_id, &target_member).await;
-        let author_highest = super::get_highest_role(ctx, guild_id, &author_member).await;
-        let bot_highest = super::get_highest_role(ctx, guild_id, &bot_member).await;
-
-        if target_highest >= author_highest {
-            ctx.say("Cannot ban this user - they have equal or higher role than you")
-                .await?;
-            return Ok(());
-        }
-
-        if target_highest >= bot_highest {
-            ctx.say("Cannot ban this user - they have equal or higher role than me")
-                .await?;
-            return Ok(());
-        }
-    }
+        Err(_) => false,
+    };
 
     let delete_days = delete_days.unwrap_or(0);
     if delete_days > 7 {
@@ -67,22 +71,14 @@ pub async fn ban(
     let ban_reason = reason.as_deref().unwrap_or("No reason provided");
     let is_softban = softban.unwrap_or(false);
 
-    match guild_id.member(ctx, user.id).await {
-        Ok(_) => {}
-        Err(_) => {
-            if let Ok(bans) = guild_id.bans(http, None, None).await
-                && bans.iter().any(|ban| ban.user.id == user.id)
-            {
-                if is_softban {
-                    ctx.say("User is already banned, cannot perform softban")
-                        .await?;
-                    return Ok(());
-                } else {
-                    ctx.say("User is already banned").await?;
-                    return Ok(());
-                }
-            }
+    if !is_member && let Ok(Some(_)) = http.get_ban(guild_id, user.id).await {
+        if is_softban {
+            ctx.say("User is already banned, cannot perform softban")
+                .await?;
+        } else {
+            ctx.say("User is already banned").await?;
         }
+        return Ok(());
     }
 
     match guild_id

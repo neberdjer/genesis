@@ -19,6 +19,7 @@ use std::time::Instant;
 pub struct Data {
     pub pool: Arc<PgPool>,
     pub start_time: Instant,
+    pub owner_id: Option<serenity::UserId>,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -33,11 +34,13 @@ impl serenity::EventHandler for Handler {
         let data = ctx.data::<Data>();
         match event {
             serenity::FullEvent::Message { new_message, .. } => {
-                handle_commit_diffs(ctx, new_message, Some(&data.pool)).await;
-                handle_git_links(ctx, new_message, Some(&data.pool)).await;
-                handle_twitter_links(ctx, new_message, Some(&data.pool)).await;
-                handle_tiktok_links(ctx, new_message, Some(&data.pool)).await;
-                handle_instagram_links(ctx, new_message, Some(&data.pool)).await;
+                tokio::join!(
+                    handle_commit_diffs(ctx, new_message, Some(&data.pool)),
+                    handle_git_links(ctx, new_message, Some(&data.pool)),
+                    handle_twitter_links(ctx, new_message, Some(&data.pool)),
+                    handle_tiktok_links(ctx, new_message, Some(&data.pool)),
+                    handle_instagram_links(ctx, new_message, Some(&data.pool)),
+                );
             }
             serenity::FullEvent::InteractionCreate {
                 interaction: serenity::Interaction::Component(component),
@@ -102,7 +105,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
-#[poise::command(prefix_command)]
+#[poise::command(prefix_command, owners_only)]
 async fn register_commands(ctx: Context<'_>) -> Result<(), Error> {
     let commands = &ctx.framework().options().commands;
     poise::builtins::register_globally(ctx.http(), commands).await?;
@@ -131,9 +134,15 @@ async fn main() -> Result<(), Error> {
         environment, prefix
     );
 
+    let owner_id = env::var("OWNER_ID")
+        .ok()
+        .and_then(|id| id.parse::<u64>().ok())
+        .map(serenity::UserId::new);
+
     let data = Data {
         pool: Arc::new(pool),
         start_time: Instant::now(),
+        owner_id,
     };
 
     let mut all_commands = commands::all_commands();

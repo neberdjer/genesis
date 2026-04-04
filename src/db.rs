@@ -160,7 +160,7 @@ pub async fn get_server_settings(
             git_links_enabled: row.try_get("git_links_enabled")?,
             twitter_enabled: row.try_get("twitter_enabled")?,
             tiktok_enabled: row.try_get("tiktok_enabled")?,
-            instagram_enabled: row.try_get("instagram_enabled").unwrap_or(true),
+            instagram_enabled: row.try_get("instagram_enabled")?,
         })
     } else {
         Ok(ServerSettings {

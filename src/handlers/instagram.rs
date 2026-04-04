@@ -1,25 +1,19 @@
 use super::instagram_handler::InstagramPost;
+use super::shared::{self, SettingCheck};
 use poise::serenity_prelude as serenity;
 use serde_json::json;
-use std::collections::HashMap;
-use std::io::Read as _;
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use sqlx::PgPool;
 use tracing::{debug, warn};
 
-use crate::db;
-use sqlx::PgPool;
+const INSTAGRAM_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-const EMBED_SUPPRESS_DELAY_MS: u64 = 500;
+fn is_instagram_url(word: &str) -> bool {
+    word.contains("instagram.com")
+        && (word.contains("/p/") || word.contains("/reel/") || word.contains("/tv/"))
+}
 
-fn download_media(url: &str) -> Option<Vec<u8>> {
-    let response = ureq::get(url)
-        .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .call()
-        .ok()?;
-    let mut bytes = Vec::new();
-    response.into_reader().read_to_end(&mut bytes).ok()?;
-    Some(bytes)
+fn clean_url(url: &str) -> &str {
+    url.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
 }
 
 fn media_filename(index: usize, url: &str) -> String {
@@ -32,134 +26,41 @@ fn media_filename(index: usize, url: &str) -> String {
     };
     format!("instagram_{}.{}", index, ext)
 }
-static RATE_LIMIT: OnceLock<Mutex<HashMap<serenity::UserId, Instant>>> = OnceLock::new();
-
-const RATE_LIMIT_SECONDS: u64 = 10;
-
-pub fn is_instagram_url(word: &str) -> bool {
-    word.contains("instagram.com")
-        && (word.contains("/p/") || word.contains("/reel/") || word.contains("/tv/"))
-}
-
-pub fn clean_url(url: &str) -> &str {
-    url.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
-}
-
-async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
-    tokio::time::sleep(Duration::from_millis(EMBED_SUPPRESS_DELAY_MS)).await;
-
-    if let Err(e) = msg
-        .channel_id
-        .edit_message(
-            &ctx.http,
-            msg.id,
-            serenity::EditMessage::new().suppress_embeds(true),
-        )
-        .await
-    {
-        warn!(
-            "Failed to suppress embed in channel {} (needs Manage Messages permission): {}",
-            msg.channel_id, e
-        );
-    }
-}
 
 pub async fn handle_instagram_links(
     ctx: &serenity::Context,
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    if msg.author.bot() {
+    if !shared::pre_check(msg, pool, SettingCheck::Instagram).await {
         return;
     }
 
-    if let Some(pool) = pool {
-        match db::is_user_blacklisted(pool, &msg.author.id.to_string()).await {
-            Ok(true) => return,
-            Err(e) => warn!("Failed to check user blacklist: {}", e),
-            _ => {}
-        }
-
-        if let Some(guild_id) = msg.guild_id {
-            match db::is_server_blacklisted(pool, &guild_id.to_string()).await {
-                Ok(true) => return,
-                Err(e) => warn!("Failed to check server blacklist: {}", e),
-                _ => {}
-            }
-
-            match db::get_server_settings(pool, &guild_id.to_string()).await {
-                Ok(settings) if !settings.instagram_enabled => return,
-                Err(e) => warn!("Failed to fetch server settings: {}", e),
-                _ => {}
-            }
-        }
-    }
-
-    handle_instagram_links_impl(ctx, msg).await;
-}
-
-fn check_rate_limit(user_id: serenity::UserId) -> bool {
-    let rate_limit = RATE_LIMIT.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut rate_limit = match rate_limit.lock() {
-        Ok(guard) => guard,
-        Err(_) => return true,
-    };
-
-    if let Some(last_time) = rate_limit.get(&user_id)
-        && last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS
-    {
-        return false;
-    }
-
-    rate_limit.insert(user_id, Instant::now());
-    true
-}
-
-async fn handle_instagram_links_impl(ctx: &serenity::Context, msg: &serenity::Message) {
-    debug!("Checking message for Instagram URLs: {}", msg.content);
-
-    let words: Vec<&str> = msg.content.split_whitespace().collect();
-    debug!("Split into {} words", words.len());
-
-    let found_posts: Vec<(String, Option<usize>)> = words
-        .iter()
-        .filter(|word| {
-            let is_instagram = is_instagram_url(word);
-            debug!("Word '{}' is Instagram URL: {}", word, is_instagram);
-            is_instagram
-        })
-        .filter_map(|word| {
-            let cleaned = clean_url(word);
-            debug!("Cleaned URL: '{}'", cleaned);
-            let parsed = InstagramPost::parse(cleaned);
-            debug!("Parsed result: {:?}", parsed);
-            parsed
-        })
+    let found_posts: Vec<(String, Option<usize>)> = msg
+        .content
+        .split_whitespace()
+        .filter(|word| is_instagram_url(word))
+        .filter_map(|word| InstagramPost::parse(clean_url(word)))
         .collect();
-
-    debug!("Found {} Instagram posts", found_posts.len());
 
     if found_posts.is_empty() {
         return;
     }
 
-    if !check_rate_limit(msg.author.id) {
+    if !shared::check_rate_limit(msg.author.id, "instagram") {
         debug!("Rate limited, skipping");
         return;
     }
 
-    debug!("Processing {} Instagram posts", found_posts.len());
     let mut any_sent = false;
     for (post_id, img_index) in found_posts {
         debug!(
             "Fetching Instagram post: id={}, img_index={:?}",
             post_id, img_index
         );
-        match InstagramPost::fetch(&post_id, img_index) {
+        let pid = post_id.clone();
+        match shared::spawn_blocking_fetch(move || InstagramPost::fetch(&pid, img_index)).await {
             Ok(post) => {
-                debug!("Successfully fetched Instagram from @{}", post.username);
-                debug!("Instagram has {} media items", post.media.len());
-
                 let mut content = format!("**{}** (@{})", post.author, post.username);
                 if !post.text.is_empty() {
                     content.push_str(&format!("\n{}", post.text));
@@ -172,12 +73,10 @@ async fn handle_instagram_links_impl(ctx: &serenity::Context, msg: &serenity::Me
 
                 let mut attachments = Vec::new();
                 if !post.media.is_empty() {
-                    debug!("Downloading {} media items", post.media.len());
                     let mut media_items = Vec::new();
                     for (i, url) in post.media.iter().enumerate() {
                         let filename = media_filename(i, url);
-                        if let Some(data) = download_media(url) {
-                            debug!("Downloaded {} ({} bytes)", filename, data.len());
+                        if let Some(data) = shared::download_media(url, INSTAGRAM_UA).await {
                             attachments
                                 .push(serenity::CreateAttachment::bytes(data, filename.clone()));
                             media_items.push(json!({
@@ -210,7 +109,6 @@ async fn handle_instagram_links_impl(ctx: &serenity::Context, msg: &serenity::Me
                     "flags": 1 << 15
                 });
 
-                debug!("Sending Instagram message to channel {}", msg.channel_id);
                 match ctx
                     .http
                     .send_message(msg.channel_id, attachments, &payload)
@@ -225,7 +123,6 @@ async fn handle_instagram_links_impl(ctx: &serenity::Context, msg: &serenity::Me
     }
 
     if any_sent {
-        debug!("Suppressing embeds");
-        suppress_embeds(ctx, msg).await;
+        shared::suppress_embeds(ctx, msg).await;
     }
 }

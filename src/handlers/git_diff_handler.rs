@@ -7,7 +7,7 @@ static GITHUB_COMPARE_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITLAB_COMMIT_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITLAB_COMPARE_PATTERN: OnceLock<Regex> = OnceLock::new();
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum GitPlatform {
     GitHub,
     GitLab,

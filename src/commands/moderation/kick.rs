@@ -49,9 +49,9 @@ pub async fn kick(
             return Ok(());
         }
 
-        let target_highest = super::get_highest_role(ctx, guild_id, &target_member).await;
-        let author_highest = super::get_highest_role(ctx, guild_id, &author_member).await;
-        let bot_highest = super::get_highest_role(ctx, guild_id, &bot_member).await;
+        let target_highest = super::get_highest_role(ctx, guild_id, &target_member);
+        let author_highest = super::get_highest_role(ctx, guild_id, &author_member);
+        let bot_highest = super::get_highest_role(ctx, guild_id, &bot_member);
 
         if target_highest >= author_highest {
             ctx.say("Cannot kick this user - they have equal or higher role than you")

@@ -1,18 +1,17 @@
 use super::git_diff_handler::CommitDiff;
-use crate::constants::{DISCORD_MESSAGE_LIMIT, EMBED_SUPPRESS_DELAY_MS, FILES_PER_PAGE};
+use super::shared::{self, SettingCheck};
+use crate::constants::{DISCORD_MESSAGE_LIMIT, FILES_PER_PAGE};
+use crate::db;
 use poise::serenity_prelude as serenity;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tracing::{error, warn};
 
-use crate::db;
-use sqlx::PgPool;
-
 static DIFF_CACHE: OnceLock<Mutex<HashMap<String, CachedDiff>>> = OnceLock::new();
-static RATE_LIMIT: OnceLock<Mutex<HashMap<serenity::UserId, Instant>>> = OnceLock::new();
 
-const RATE_LIMIT_SECONDS: u64 = 10;
+const MAX_CACHE_ENTRIES: usize = 1000;
 
 struct CachedDiff {
     responses: Vec<String>,
@@ -67,6 +66,9 @@ fn get_cached_responses(commit: &CommitDiff) -> Option<Vec<String>> {
 fn cache_responses(commit: &CommitDiff, responses: Vec<String>) {
     let cache = DIFF_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(mut cache) = cache.lock() {
+        if cache.len() >= MAX_CACHE_ENTRIES {
+            cache.retain(|_, v| !v.is_expired());
+        }
         let key = get_cache_key(commit);
         cache.insert(key, CachedDiff::new(responses));
     }
@@ -91,25 +93,6 @@ pub fn clean_url(url: &str) -> &str {
         .trim_end_matches([',', ')', ']', '}', ';'])
 }
 
-async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
-    tokio::time::sleep(Duration::from_millis(EMBED_SUPPRESS_DELAY_MS)).await;
-
-    if let Err(e) = msg
-        .channel_id
-        .edit_message(
-            &ctx.http,
-            msg.id,
-            serenity::EditMessage::new().suppress_embeds(true),
-        )
-        .await
-    {
-        warn!(
-            "Failed to suppress embed in channel {} (needs Manage Messages permission): {}",
-            msg.channel_id, e
-        );
-    }
-}
-
 fn create_pagination_buttons(
     current_page: usize,
     total_pages: usize,
@@ -127,7 +110,7 @@ fn create_pagination_buttons(
     let file_separator = if file_filter_part.is_empty() { "" } else { "|" };
 
     let prev_button = serenity::CreateButton::new(format!(
-        "diff_prev_{}{}{}_{}_{}_{}{}{}_{}",
+        "diff:prev:{}{}{}:{}:{}:{}{}{}_{}",
         platform_prefix,
         separator,
         host_part,
@@ -148,7 +131,7 @@ fn create_pagination_buttons(
         .disabled(true);
 
     let next_button = serenity::CreateButton::new(format!(
-        "diff_next_{}{}{}_{}_{}_{}{}{}_{}",
+        "diff:next:{}{}{}:{}:{}:{}{}{}_{}",
         platform_prefix,
         separator,
         host_part,
@@ -171,9 +154,9 @@ async fn send_paginated_diff(
     msg: &serenity::Message,
     commit: &CommitDiff,
     responses: Vec<String>,
-) {
+) -> bool {
     if responses.is_empty() {
-        return;
+        return false;
     }
 
     let total_pages = responses.len();
@@ -181,7 +164,7 @@ async fn send_paginated_diff(
 
     if first_page.len() > DISCORD_MESSAGE_LIMIT {
         warn!("Diff response too long, skipping");
-        return;
+        return false;
     }
 
     let mut message_builder = serenity::CreateMessage::new()
@@ -194,12 +177,16 @@ async fn send_paginated_diff(
             message_builder.components(vec![serenity::CreateComponent::ActionRow(buttons)]);
     }
 
-    if let Err(e) = msg
+    match msg
         .channel_id
         .send_message(&ctx.http, message_builder)
         .await
     {
-        error!("Failed to send diff message: {}", e);
+        Ok(_) => true,
+        Err(e) => {
+            error!("Failed to send diff message: {}", e);
+            false
+        }
     }
 }
 
@@ -208,61 +195,28 @@ pub async fn handle_commit_diffs(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    if msg.author.bot() {
+    if !shared::pre_check(msg, pool, SettingCheck::GitDiffs).await {
         return;
     }
 
-    let mut settings = None;
-    if let Some(pool) = pool {
-        match db::is_user_blacklisted(pool, &msg.author.id.to_string()).await {
-            Ok(true) => return,
-            Err(e) => warn!("Failed to check user blacklist: {}", e),
-            _ => {}
-        }
-
-        if let Some(guild_id) = msg.guild_id {
-            match db::is_server_blacklisted(pool, &guild_id.to_string()).await {
-                Ok(true) => return,
-                Err(e) => warn!("Failed to check server blacklist: {}", e),
-                _ => {}
-            }
-
-            match db::get_server_settings(pool, &guild_id.to_string()).await {
-                Ok(s) => {
-                    if !s.git_diffs_enabled {
-                        return;
-                    }
-                    settings = Some(s);
-                }
-                Err(e) => warn!("Failed to fetch server settings: {}", e),
-            }
-        }
-    }
-
-    handle_commit_diffs_impl(ctx, msg, settings.as_ref()).await;
-}
-
-fn check_rate_limit(user_id: serenity::UserId) -> bool {
-    let rate_limit = RATE_LIMIT.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut rate_limit = match rate_limit.lock() {
-        Ok(guard) => guard,
-        Err(_) => return true,
+    let git_compares_enabled = if let Some(pool) = pool
+        && let Some(guild_id) = msg.guild_id
+    {
+        db::get_server_settings(pool, &guild_id.to_string())
+            .await
+            .map(|s| s.git_compares_enabled)
+            .unwrap_or(true)
+    } else {
+        true
     };
 
-    if let Some(last_time) = rate_limit.get(&user_id)
-        && last_time.elapsed().as_secs() < RATE_LIMIT_SECONDS
-    {
-        return false;
-    }
-
-    rate_limit.insert(user_id, Instant::now());
-    true
+    handle_commit_diffs_impl(ctx, msg, git_compares_enabled).await;
 }
 
 async fn handle_commit_diffs_impl(
     ctx: &serenity::Context,
     msg: &serenity::Message,
-    settings: Option<&db::ServerSettings>,
+    git_compares_enabled: bool,
 ) {
     let words: Vec<&str> = msg.content.split_whitespace().collect();
 
@@ -281,7 +235,7 @@ async fn handle_commit_diffs_impl(
         return;
     }
 
-    if !check_rate_limit(msg.author.id) {
+    if !shared::check_rate_limit(msg.author.id, "git_diffs") {
         return;
     }
 
@@ -321,28 +275,20 @@ async fn handle_commit_diffs_impl(
         return;
     }
 
-    if let Some(settings) = settings
-        && !settings.git_compares_enabled
-    {
+    if !git_compares_enabled {
         found_commits.retain(|commit| !commit.is_compare);
         if found_commits.is_empty() {
             return;
         }
     }
 
-    suppress_embeds(ctx, msg).await;
-
+    let mut any_sent = false;
     for commit in found_commits {
         let chunked = if let Some(cached) = get_cached_responses(&commit) {
             cached
         } else {
-            match commit.format_diff_response() {
-                Ok(responses) => {
-                    let chunked: Vec<String> = responses
-                        .chunks(FILES_PER_PAGE)
-                        .map(|chunk| chunk.join("\n\n"))
-                        .collect();
-
+            match fetch_and_chunk(&commit).await {
+                Ok(chunked) => {
                     cache_responses(&commit, chunked.clone());
                     chunked
                 }
@@ -353,8 +299,47 @@ async fn handle_commit_diffs_impl(
             }
         };
 
-        send_paginated_diff(ctx, msg, &commit, chunked).await;
+        if send_paginated_diff(ctx, msg, &commit, chunked).await {
+            any_sent = true;
+        }
     }
+
+    if any_sent {
+        shared::suppress_embeds(ctx, msg).await;
+    }
+}
+
+async fn fetch_and_chunk(
+    commit: &CommitDiff,
+) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let platform = commit.platform;
+    let owner = commit.owner.clone();
+    let repo = commit.repo.clone();
+    let commit_str = commit.commit.clone();
+    let host = commit.host.clone();
+    let file_filter = commit.file_filter.clone();
+    let is_compare = commit.is_compare;
+
+    tokio::task::spawn_blocking(move || {
+        let c = CommitDiff {
+            platform,
+            owner,
+            repo,
+            commit: commit_str,
+            diff_hash: None,
+            host,
+            file_filter,
+            is_compare,
+        };
+        let responses = c.format_diff_response()?;
+        let chunked: Vec<String> = responses
+            .chunks(FILES_PER_PAGE)
+            .map(|chunk| chunk.join("\n\n"))
+            .collect();
+        Ok(chunked)
+    })
+    .await
+    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?
 }
 
 fn looks_like_filename(word: &str) -> bool {
@@ -367,23 +352,33 @@ pub async fn handle_diff_pagination(
 ) {
     let custom_id = &interaction.data.custom_id;
 
-    if !custom_id.starts_with("diff_prev_") && !custom_id.starts_with("diff_next_") {
+    if !custom_id.starts_with("diff:prev:") && !custom_id.starts_with("diff:next:") {
         return;
     }
 
-    let parts: Vec<&str> = custom_id.split('_').collect();
-    if parts.len() < 6 {
+    let parts: Vec<&str> = custom_id.splitn(3, ':').collect();
+    if parts.len() < 3 {
         return;
     }
 
     let direction = parts[1];
-    let platform_and_host = parts[2];
+    let rest = parts[2];
+
+    // {platform}{|host}:{owner}:{repo}:{commit}{|filter}_{page}
+    let colon_parts: Vec<&str> = rest.splitn(4, ':').collect();
+    if colon_parts.len() < 4 {
+        return;
+    }
+
+    let platform_and_host = colon_parts[0];
+    let owner = colon_parts[1];
+    let repo = colon_parts[2];
+    let commit_filter_page = colon_parts[3];
 
     let (platform, host) = if platform_and_host.starts_with("gh") {
         (super::git_diff_handler::GitPlatform::GitHub, None)
     } else if platform_and_host.starts_with("gl") {
-        if platform_and_host.contains('|') {
-            let host_part = platform_and_host.strip_prefix("gl|").unwrap_or("");
+        if let Some(host_part) = platform_and_host.strip_prefix("gl|") {
             (
                 super::git_diff_handler::GitPlatform::GitLab,
                 Some(host_part.to_string()),
@@ -398,20 +393,22 @@ pub async fn handle_diff_pagination(
         return;
     };
 
-    let owner = parts[3];
-    let repo = parts[4];
+    // {commit}{|filter}_{page}
+    let (commit_and_filter, page_str) = match commit_filter_page.rsplit_once('_') {
+        Some((cf, p)) => (cf, p),
+        None => return,
+    };
 
-    let commit_and_filter = parts[5];
-    let (commit_sha, file_filter) = if commit_and_filter.contains('|') {
-        let mut split = commit_and_filter.splitn(2, '|');
-        let commit = split.next().unwrap_or("");
-        let filter = split.next().map(|s| s.to_string());
-        (commit, filter)
+    let current_page: usize = match page_str.parse() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let (commit_sha, file_filter) = if let Some((c, f)) = commit_and_filter.split_once('|') {
+        (c, Some(f.to_string()))
     } else {
         (commit_and_filter, None)
     };
-
-    let current_page: usize = parts[6].parse().unwrap_or(0);
 
     let new_page = match direction {
         "prev" => current_page.saturating_sub(1),
@@ -433,13 +430,8 @@ pub async fn handle_diff_pagination(
     let chunked = if let Some(cached) = get_cached_responses(&commit) {
         cached
     } else {
-        match commit.format_diff_response() {
-            Ok(responses) => {
-                let chunked: Vec<String> = responses
-                    .chunks(FILES_PER_PAGE)
-                    .map(|chunk| chunk.join("\n\n"))
-                    .collect();
-
+        match fetch_and_chunk(&commit).await {
+            Ok(chunked) => {
                 cache_responses(&commit, chunked.clone());
                 chunked
             }
