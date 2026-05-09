@@ -1,19 +1,34 @@
 use super::instagram_handler::InstagramPost;
 use super::shared::{self, SettingCheck};
+use crate::constants::{INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS};
 use poise::serenity_prelude as serenity;
 use serde_json::json;
 use sqlx::PgPool;
 use tracing::{debug, warn};
 
-const INSTAGRAM_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-
 fn is_instagram_url(word: &str) -> bool {
-    word.contains("instagram.com")
-        && (word.contains("/p/") || word.contains("/reel/") || word.contains("/tv/"))
+    let lower = word.to_ascii_lowercase();
+    if !lower.contains("instagram.com") {
+        return false;
+    }
+    lower.contains("/p/")
+        || lower.contains("/reel/")
+        || lower.contains("/reels/")
+        || lower.contains("/tv/")
+        || lower.contains("/share/")
 }
 
 fn clean_url(url: &str) -> &str {
-    url.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
+    let trimmed = url.trim_start_matches(|c: char| !c.is_alphanumeric());
+    trimmed.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
+}
+
+fn ua_for_media_url(url: &str) -> &'static str {
+    if INSTAGRAM_MIRRORS.iter().any(|m| url.contains(m)) {
+        INSTAGRAM_MIRROR_UA
+    } else {
+        INSTAGRAM_DESKTOP_UA
+    }
 }
 
 fn media_filename(index: usize, url: &str) -> String {
@@ -36,14 +51,19 @@ pub async fn handle_instagram_links(
         return;
     }
 
-    let found_posts: Vec<(String, Option<usize>)> = msg
-        .content
-        .split_whitespace()
-        .filter(|word| is_instagram_url(word))
-        .filter_map(|word| InstagramPost::parse(clean_url(word)))
-        .collect();
+    let mut found_urls: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for word in msg.content.split_whitespace() {
+        if !is_instagram_url(word) {
+            continue;
+        }
+        let cleaned = clean_url(word).to_string();
+        if seen.insert(cleaned.clone()) {
+            found_urls.push(cleaned);
+        }
+    }
 
-    if found_posts.is_empty() {
+    if found_urls.is_empty() {
         return;
     }
 
@@ -53,13 +73,10 @@ pub async fn handle_instagram_links(
     }
 
     let mut any_sent = false;
-    for (post_id, img_index) in found_posts {
-        debug!(
-            "Fetching Instagram post: id={}, img_index={:?}",
-            post_id, img_index
-        );
-        let pid = post_id.clone();
-        match shared::spawn_blocking_fetch(move || InstagramPost::fetch(&pid, img_index)).await {
+    for url in found_urls {
+        debug!("Fetching Instagram post: url={}", url);
+        let url_owned = url.clone();
+        match shared::spawn_blocking_fetch(move || InstagramPost::fetch(&url_owned)).await {
             Ok(post) => {
                 let mut content = format!("**{}** (@{})", post.author, post.username);
                 if !post.text.is_empty() {
@@ -74,9 +91,11 @@ pub async fn handle_instagram_links(
                 let mut attachments = Vec::new();
                 if !post.media.is_empty() {
                     let mut media_items = Vec::new();
-                    for (i, url) in post.media.iter().enumerate() {
-                        let filename = media_filename(i, url);
-                        if let Some(data) = shared::download_media(url, INSTAGRAM_UA).await {
+                    for (i, media_url) in post.media.iter().enumerate() {
+                        let filename = media_filename(i, media_url);
+                        if let Some(data) =
+                            shared::download_media(media_url, ua_for_media_url(media_url)).await
+                        {
                             attachments
                                 .push(serenity::CreateAttachment::bytes(data, filename.clone()));
                             media_items.push(json!({
@@ -85,7 +104,7 @@ pub async fn handle_instagram_links(
                                 }
                             }));
                         } else {
-                            warn!("Failed to download media: {}", url);
+                            warn!("Failed to download media: {}", media_url);
                         }
                     }
 
@@ -118,7 +137,7 @@ pub async fn handle_instagram_links(
                     Err(e) => warn!("Failed to send Instagram message: {}", e),
                 }
             }
-            Err(e) => warn!("Failed to fetch Instagram {}: {}", post_id, e),
+            Err(e) => warn!("Failed to fetch Instagram {}: {}", url, e),
         }
     }
 

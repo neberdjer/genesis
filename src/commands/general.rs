@@ -41,7 +41,7 @@ pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
         let mut channels = 0u64;
         for guild_id in &guilds {
             if let Some(guild) = cache.guild(*guild_id) {
-                users += guild.member_count;
+                users += u64::from(u32::from(guild.member_count));
                 channels += guild.channels.len() as u64;
             }
         }
