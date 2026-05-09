@@ -47,13 +47,19 @@ pub async fn handle_git_links(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    let found_links: Vec<GitFileLink> = msg
+    let mut found_links: Vec<GitFileLink> = msg
         .content
         .split_whitespace()
         .filter(|word| is_git_platform_url(word))
         .filter_map(|word| GitFileLink::parse(clean_url(word)))
         .collect();
 
+    if found_links.is_empty() {
+        return;
+    }
+
+    let blocklist = shared::fetch_blocklist(pool, msg.guild_id).await;
+    found_links.retain(|link| !shared::is_url_in_blocklist(&link.original_url, &blocklist));
     if found_links.is_empty() {
         return;
     }

@@ -84,6 +84,66 @@ pub enum SettingCheck {
     GitDiffs,
 }
 
+pub fn normalize_domain(domain: &str) -> String {
+    let lower = domain.trim().to_ascii_lowercase();
+    let stripped = lower
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("www.");
+    stripped
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
+pub fn extract_host(url: &str) -> Option<&str> {
+    let scheme_end = url.find("://")?;
+    let after_scheme = &url[scheme_end + 3..];
+    let host = after_scheme.split('/').next()?.split('?').next()?;
+    let host = host.split(':').next()?;
+    if host.is_empty() { None } else { Some(host) }
+}
+
+pub fn host_matches_blocked(host: &str, blocked: &str) -> bool {
+    let host = host.trim_start_matches("www.").to_ascii_lowercase();
+    let blocked = blocked.trim_start_matches("www.").to_ascii_lowercase();
+    if host == blocked {
+        return true;
+    }
+    host.ends_with(&format!(".{}", blocked))
+}
+
+pub async fn fetch_blocklist(
+    pool: Option<&PgPool>,
+    guild_id: Option<serenity::GuildId>,
+) -> Vec<String> {
+    let Some(pool) = pool else {
+        return Vec::new();
+    };
+    let guild_id_str = guild_id.map(|g| g.to_string());
+    match db::fetch_blocked_domains(pool, guild_id_str.as_deref()).await {
+        Ok(b) => b,
+        Err(e) => {
+            warn!("Failed to fetch blocked domains: {}", e);
+            Vec::new()
+        }
+    }
+}
+
+pub fn is_url_in_blocklist(url: &str, blocklist: &[String]) -> bool {
+    if blocklist.is_empty() {
+        return false;
+    }
+    let Some(host) = extract_host(url) else {
+        return false;
+    };
+    blocklist.iter().any(|b| host_matches_blocked(host, b))
+}
+
 pub fn is_safe_host(host: &str) -> bool {
     let host = host.split(':').next().unwrap_or(host);
 

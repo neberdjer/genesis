@@ -105,6 +105,12 @@ pub async fn handle_instagram_links(
         return;
     }
 
+    let blocklist = shared::fetch_blocklist(pool, msg.guild_id).await;
+    found_urls.retain(|url| !shared::is_url_in_blocklist(url, &blocklist));
+    if found_urls.is_empty() {
+        return;
+    }
+
     if !shared::pre_check(msg, pool, SettingCheck::Instagram).await {
         return;
     }

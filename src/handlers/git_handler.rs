@@ -19,7 +19,6 @@ pub enum GitPlatform {
 pub struct GitFileLink {
     #[allow(dead_code)]
     pub platform: GitPlatform,
-    #[allow(dead_code)]
     pub original_url: String,
     pub raw_url: String,
     pub file_name: String,

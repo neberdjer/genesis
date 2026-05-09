@@ -483,3 +483,109 @@ pub async fn set_welcome_role(
 
     Ok(())
 }
+
+pub async fn add_global_blocked_domain(
+    pool: &PgPool,
+    domain: &str,
+    blocked_by: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO global_blocked_domains (domain, blocked_by)
+        VALUES ($1, $2)
+        ON CONFLICT (domain) DO NOTHING
+        "#,
+    )
+    .bind(domain)
+    .bind(blocked_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_global_blocked_domain(
+    pool: &PgPool,
+    domain: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM global_blocked_domains WHERE domain = $1")
+        .bind(domain)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn list_global_blocked_domains(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar::<_, String>("SELECT domain FROM global_blocked_domains ORDER BY domain")
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn add_guild_blocked_domain(
+    pool: &PgPool,
+    guild_id: &str,
+    domain: &str,
+    blocked_by: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO guild_blocked_domains (guild_id, domain, blocked_by)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (guild_id, domain) DO NOTHING
+        "#,
+    )
+    .bind(guild_id)
+    .bind(domain)
+    .bind(blocked_by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_guild_blocked_domain(
+    pool: &PgPool,
+    guild_id: &str,
+    domain: &str,
+) -> Result<bool, sqlx::Error> {
+    let result =
+        sqlx::query("DELETE FROM guild_blocked_domains WHERE guild_id = $1 AND domain = $2")
+            .bind(guild_id)
+            .bind(domain)
+            .execute(pool)
+            .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn list_guild_blocked_domains(
+    pool: &PgPool,
+    guild_id: &str,
+) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT domain FROM guild_blocked_domains WHERE guild_id = $1 ORDER BY domain",
+    )
+    .bind(guild_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn fetch_blocked_domains(
+    pool: &PgPool,
+    guild_id: Option<&str>,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows = if let Some(guild_id) = guild_id {
+        sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT domain FROM global_blocked_domains
+            UNION
+            SELECT domain FROM guild_blocked_domains WHERE guild_id = $1
+            "#,
+        )
+        .bind(guild_id)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_scalar::<_, String>("SELECT domain FROM global_blocked_domains")
+            .fetch_all(pool)
+            .await?
+    };
+    Ok(rows)
+}

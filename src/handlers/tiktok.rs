@@ -106,6 +106,12 @@ pub async fn handle_tiktok_links(
         return;
     }
 
+    let blocklist = shared::fetch_blocklist(pool, msg.guild_id).await;
+    found_videos.retain(|url| !shared::is_url_in_blocklist(url, &blocklist));
+    if found_videos.is_empty() {
+        return;
+    }
+
     if !shared::pre_check(msg, pool, SettingCheck::TikTok).await {
         return;
     }

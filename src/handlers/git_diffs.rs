@@ -226,13 +226,16 @@ pub async fn handle_commit_diffs(
         true
     };
 
-    handle_commit_diffs_impl(ctx, msg, git_compares_enabled).await;
+    let blocklist = shared::fetch_blocklist(pool, msg.guild_id).await;
+
+    handle_commit_diffs_impl(ctx, msg, git_compares_enabled, &blocklist).await;
 }
 
 async fn handle_commit_diffs_impl(
     ctx: &serenity::Context,
     msg: &serenity::Message,
     git_compares_enabled: bool,
+    blocklist: &[String],
 ) {
     let words: Vec<&str> = msg.content.split_whitespace().collect();
 
@@ -289,6 +292,18 @@ async fn handle_commit_diffs_impl(
 
     if found_commits.is_empty() {
         return;
+    }
+
+    if !blocklist.is_empty() {
+        found_commits.retain(|commit| {
+            let host = commit.host.as_deref().unwrap_or("github.com");
+            !blocklist
+                .iter()
+                .any(|b| shared::host_matches_blocked(host, b))
+        });
+        if found_commits.is_empty() {
+            return;
+        }
     }
 
     if !git_compares_enabled {
