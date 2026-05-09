@@ -3,9 +3,7 @@ stages:
     - build
 
 lint:
-    image:
-        name: rust:latest
-        pull_policy: always
+    image: rust:1.95
     stage: lint
     script:
         - rustup component add rustfmt clippy
