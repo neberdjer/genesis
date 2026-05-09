@@ -32,14 +32,15 @@ impl CachedDiff {
 }
 
 fn get_cache_key(commit: &CommitDiff) -> String {
+    let kind = if commit.is_compare { "cmp" } else { "cmt" };
     let base = match &commit.host {
         Some(host) => format!(
-            "{}:{}:{}:{}",
-            host, commit.owner, commit.repo, commit.commit
+            "{}:{}:{}:{}:{}",
+            kind, host, commit.owner, commit.repo, commit.commit
         ),
         None => format!(
-            "github.com:{}:{}:{}",
-            commit.owner, commit.repo, commit.commit
+            "{}:github.com:{}:{}:{}",
+            kind, commit.owner, commit.repo, commit.commit
         ),
     };
 
@@ -68,6 +69,14 @@ fn cache_responses(commit: &CommitDiff, responses: Vec<String>) {
     if let Ok(mut cache) = cache.lock() {
         if cache.len() >= MAX_CACHE_ENTRIES {
             cache.retain(|_, v| !v.is_expired());
+            if cache.len() >= MAX_CACHE_ENTRIES
+                && let Some(oldest_key) = cache
+                    .iter()
+                    .min_by_key(|(_, v)| v.timestamp)
+                    .map(|(k, _)| k.clone())
+            {
+                cache.remove(&oldest_key);
+            }
         }
         let key = get_cache_key(commit);
         cache.insert(key, CachedDiff::new(responses));
@@ -98,9 +107,11 @@ fn create_pagination_buttons(
     total_pages: usize,
     commit: &CommitDiff,
 ) -> serenity::CreateActionRow<'_> {
-    let platform_prefix = match commit.platform {
-        super::git_diff_handler::GitPlatform::GitHub => "gh",
-        super::git_diff_handler::GitPlatform::GitLab => "gl",
+    let platform_prefix = match (commit.platform, commit.is_compare) {
+        (super::git_diff_handler::GitPlatform::GitHub, false) => "gh",
+        (super::git_diff_handler::GitPlatform::GitHub, true) => "gH",
+        (super::git_diff_handler::GitPlatform::GitLab, false) => "gl",
+        (super::git_diff_handler::GitPlatform::GitLab, true) => "gL",
     };
 
     let host_part = commit.host.as_deref().unwrap_or("");
@@ -169,7 +180,8 @@ async fn send_paginated_diff(
 
     let mut message_builder = serenity::CreateMessage::new()
         .content(first_page)
-        .reference_message(msg);
+        .reference_message(msg)
+        .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
 
     if total_pages > 1 {
         let buttons = create_pagination_buttons(0, total_pages, commit);
@@ -195,6 +207,10 @@ pub async fn handle_commit_diffs(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
+    if !msg.content.split_whitespace().any(is_commit_url) {
+        return;
+    }
+
     if !shared::pre_check(msg, pool, SettingCheck::GitDiffs).await {
         return;
     }
@@ -375,20 +391,30 @@ pub async fn handle_diff_pagination(
     let repo = colon_parts[2];
     let commit_filter_page = colon_parts[3];
 
-    let (platform, host) = if platform_and_host.starts_with("gh") {
-        (super::git_diff_handler::GitPlatform::GitHub, None)
-    } else if platform_and_host.starts_with("gl") {
-        if let Some(host_part) = platform_and_host.strip_prefix("gl|") {
-            (
-                super::git_diff_handler::GitPlatform::GitLab,
-                Some(host_part.to_string()),
-            )
-        } else {
-            (
-                super::git_diff_handler::GitPlatform::GitLab,
-                Some("gitlab.com".to_string()),
-            )
-        }
+    let (platform, is_compare, host) = if let Some(rest) = platform_and_host.strip_prefix("gh") {
+        (
+            super::git_diff_handler::GitPlatform::GitHub,
+            false,
+            rest.strip_prefix('|').map(|s| s.to_string()),
+        )
+    } else if let Some(rest) = platform_and_host.strip_prefix("gH") {
+        (
+            super::git_diff_handler::GitPlatform::GitHub,
+            true,
+            rest.strip_prefix('|').map(|s| s.to_string()),
+        )
+    } else if let Some(rest) = platform_and_host.strip_prefix("gl") {
+        let host = rest
+            .strip_prefix('|')
+            .map(|s| s.to_string())
+            .or_else(|| Some("gitlab.com".to_string()));
+        (super::git_diff_handler::GitPlatform::GitLab, false, host)
+    } else if let Some(rest) = platform_and_host.strip_prefix("gL") {
+        let host = rest
+            .strip_prefix('|')
+            .map(|s| s.to_string())
+            .or_else(|| Some("gitlab.com".to_string()));
+        (super::git_diff_handler::GitPlatform::GitLab, true, host)
     } else {
         return;
     };
@@ -424,7 +450,7 @@ pub async fn handle_diff_pagination(
         diff_hash: None,
         host,
         file_filter,
-        is_compare: false,
+        is_compare,
     };
 
     let chunked = if let Some(cached) = get_cached_responses(&commit) {

@@ -34,6 +34,9 @@ impl serenity::EventHandler for Handler {
         let data = ctx.data::<Data>();
         match event {
             serenity::FullEvent::Message { new_message, .. } => {
+                if new_message.author.bot() {
+                    return;
+                }
                 tokio::join!(
                     handle_commit_diffs(ctx, new_message, Some(&data.pool)),
                     handle_git_links(ctx, new_message, Some(&data.pool)),
@@ -165,7 +168,11 @@ async fn main() -> Result<(), Error> {
         | serenity::GatewayIntents::MESSAGE_CONTENT
         | serenity::GatewayIntents::GUILD_MEMBERS;
 
-    let mut client = serenity::ClientBuilder::new(token, intents)
+    let http = serenity::HttpBuilder::new(token.clone())
+        .default_allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
+        .build();
+
+    let mut client = serenity::ClientBuilder::new_with_http(token, Arc::new(http), intents)
         .framework(Box::new(poise::Framework::new(options)))
         .event_handler(Arc::new(Handler))
         .data(Arc::new(data) as _)

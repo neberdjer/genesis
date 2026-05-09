@@ -1,3 +1,5 @@
+use super::shared::is_safe_host;
+use crate::constants::{MAX_FILE_CHARS, MAX_FILE_FETCH_BYTES, SPACES_PER_TAB};
 use regex::Regex;
 use std::sync::OnceLock;
 
@@ -5,9 +7,6 @@ static GITHUB_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITLAB_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITEA_PATTERN: OnceLock<Regex> = OnceLock::new();
 static RUSTDOC_PATTERN: OnceLock<Regex> = OnceLock::new();
-
-const SPACES_PER_TAB: &str = "    ";
-const MAX_FILE_CHARS: usize = 1700;
 
 #[derive(Debug, PartialEq)]
 pub enum GitPlatform {
@@ -74,6 +73,9 @@ impl GitFileLink {
 
         let captures = pattern.captures(url)?;
         let host = captures.get(1)?.as_str();
+        if !is_safe_host(host) {
+            return None;
+        }
         let full_path = captures.get(2)?.as_str();
         let commit = captures.get(3)?.as_str();
         let path = captures.get(4)?.as_str();
@@ -101,6 +103,9 @@ impl GitFileLink {
 
         let captures = pattern.captures(url)?;
         let host = captures.get(1)?.as_str();
+        if !is_safe_host(host) {
+            return None;
+        }
         let project = captures.get(2)?.as_str();
         let version = captures.get(3)?.as_str();
         let crate_name = captures.get(4)?.as_str();
@@ -132,6 +137,9 @@ impl GitFileLink {
 
         let captures = pattern.captures(url)?;
         let host = captures.get(1)?.as_str();
+        if !is_safe_host(host) {
+            return None;
+        }
         let owner = captures.get(2)?.as_str();
         let repo = captures.get(3)?.as_str();
         let commit = captures.get(4)?.as_str();
@@ -156,8 +164,13 @@ impl GitFileLink {
     }
 
     pub fn fetch_content(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        use std::io::Read as _;
         let response = ureq::get(&self.raw_url).call()?;
-        let content = response.into_string()?;
+        let mut content = String::new();
+        response
+            .into_reader()
+            .take(MAX_FILE_FETCH_BYTES as u64)
+            .read_to_string(&mut content)?;
 
         if self.platform == GitPlatform::RustDoc {
             Ok(Self::strip_html(&content))

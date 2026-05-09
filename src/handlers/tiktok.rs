@@ -8,18 +8,35 @@ use tracing::{debug, warn};
 const TIKTOK_ACCENT_COLOR: u32 = 0x000000;
 
 fn is_tiktok_url(word: &str) -> bool {
-    word.contains("tiktok.com")
+    let lower = word.to_ascii_lowercase();
+    let Some(scheme_end) = lower.find("://") else {
+        return false;
+    };
+    let after_scheme = &lower[scheme_end + 3..];
+    let host = after_scheme.split('/').next().unwrap_or("");
+    let normalized = host
+        .trim_start_matches("www.")
+        .trim_start_matches("vm.")
+        .trim_start_matches("vt.")
+        .trim_start_matches("m.");
+    normalized == "tiktok.com"
 }
 
 fn clean_url(url: &str) -> &str {
-    url.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
+    let trimmed = url.trim_start_matches(|c: char| !c.is_alphanumeric());
+    trimmed.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
 }
 
 fn media_filename(index: usize, url: &str) -> String {
-    let ext = if url.contains(".mp4") || url.contains("video") {
-        "mp4"
-    } else if url.contains(".webp") {
+    let lower = url.to_ascii_lowercase();
+    let ext = if lower.contains(".jpeg") || lower.contains(".jpg") {
+        "jpg"
+    } else if lower.contains(".webp") {
         "webp"
+    } else if lower.contains(".png") {
+        "png"
+    } else if lower.contains(".mp4") || lower.contains("/play/") || lower.contains("playwm") {
+        "mp4"
     } else {
         "jpg"
     };
@@ -72,18 +89,24 @@ pub async fn handle_tiktok_links(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    if !shared::pre_check(msg, pool, SettingCheck::TikTok).await {
+    let mut found_videos: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for word in msg.content.split_whitespace() {
+        if !is_tiktok_url(word) {
+            continue;
+        }
+        if let Some(parsed) = TikTokPost::parse(clean_url(word))
+            && seen.insert(parsed.clone())
+        {
+            found_videos.push(parsed);
+        }
+    }
+
+    if found_videos.is_empty() {
         return;
     }
 
-    let found_videos: Vec<String> = msg
-        .content
-        .split_whitespace()
-        .filter(|word| is_tiktok_url(word))
-        .filter_map(|word| TikTokPost::parse(clean_url(word)))
-        .collect();
-
-    if found_videos.is_empty() {
+    if !shared::pre_check(msg, pool, SettingCheck::TikTok).await {
         return;
     }
 

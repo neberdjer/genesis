@@ -33,7 +33,8 @@ async fn send_code_snippet(ctx: &serenity::Context, msg: &serenity::Message, res
             &ctx.http,
             serenity::CreateMessage::new()
                 .content(content)
-                .reference_message(msg),
+                .reference_message(msg)
+                .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false)),
         )
         .await
     {
@@ -46,10 +47,6 @@ pub async fn handle_git_links(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    if !shared::pre_check(msg, pool, SettingCheck::GitLinks).await {
-        return;
-    }
-
     let found_links: Vec<GitFileLink> = msg
         .content
         .split_whitespace()
@@ -58,6 +55,10 @@ pub async fn handle_git_links(
         .collect();
 
     if found_links.is_empty() {
+        return;
+    }
+
+    if !shared::pre_check(msg, pool, SettingCheck::GitLinks).await {
         return;
     }
 

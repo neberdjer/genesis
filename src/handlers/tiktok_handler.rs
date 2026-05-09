@@ -1,3 +1,4 @@
+use crate::constants::TIKTOK_DOWNLOAD_UA;
 use regex::Regex;
 use serde::Deserialize;
 use std::sync::OnceLock;
@@ -37,8 +38,10 @@ pub struct TikTokPost {
 impl TikTokPost {
     pub fn parse(url: &str) -> Option<String> {
         let pattern = TIKTOK_PATTERN.get_or_init(|| {
-            Regex::new(r"(?i)https?://(?:www\.|vm\.|vt\.)?tiktok\.com/(?:@[\w.-]+/video/|t/)?(\w+)")
-                .unwrap()
+            Regex::new(
+                r"(?i)https?://(?:www\.|vm\.|vt\.|m\.)?tiktok\.com/(?:@[\w.-]+/(?:video|photo)/|t/|embed/(?:v\d+/)?|v/)?(\w+)",
+            )
+            .unwrap()
         });
 
         let captures = pattern.captures(url)?;
@@ -54,7 +57,7 @@ impl TikTokPost {
         );
 
         let response = ureq::get(&api_url)
-            .set("User-Agent", "Mozilla/5.0 (compatible; GenesisBot/1.0)")
+            .set("User-Agent", TIKTOK_DOWNLOAD_UA)
             .call()?;
 
         let data: TikTokApiResponse = response.into_json()?;

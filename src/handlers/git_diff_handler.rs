@@ -1,4 +1,5 @@
-use crate::constants::MAX_DIFF_CHARS_PER_FILE;
+use super::shared::is_safe_host;
+use crate::constants::{MAX_DIFF_CHARS_PER_FILE, MAX_DIFF_FETCH_BYTES};
 use regex::Regex;
 use std::sync::OnceLock;
 
@@ -95,6 +96,9 @@ impl CommitDiff {
 
         let captures = pattern.captures(url)?;
         let host = captures.get(1)?.as_str().to_string();
+        if !is_safe_host(&host) {
+            return None;
+        }
         let full_path = captures.get(2)?.as_str();
         let commit = captures.get(3)?.as_str().to_string();
         let diff_hash = captures.get(4).map(|m| m.as_str().to_string());
@@ -125,6 +129,9 @@ impl CommitDiff {
 
         let captures = pattern.captures(url)?;
         let host = captures.get(1)?.as_str().to_string();
+        if !is_safe_host(&host) {
+            return None;
+        }
         let full_path = captures.get(2)?.as_str();
         let compare_range = captures.get(3)?.as_str().to_string();
 
@@ -197,12 +204,18 @@ impl CommitDiff {
     }
 
     pub fn fetch_diff(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        use std::io::Read as _;
         let url = self.diff_url();
         tracing::debug!("Fetching diff from: {}", url);
         let response = ureq::get(&url).call()?;
 
         if self.platform == GitPlatform::GitLab && self.is_compare {
-            let json: serde_json::Value = response.into_json()?;
+            let mut bytes = Vec::new();
+            response
+                .into_reader()
+                .take(MAX_DIFF_FETCH_BYTES as u64)
+                .read_to_end(&mut bytes)?;
+            let json: serde_json::Value = serde_json::from_slice(&bytes)?;
 
             if let Some(diffs_array) = json.get("diffs").and_then(|v| v.as_array()) {
                 let mut full_diff = String::new();
@@ -235,7 +248,11 @@ impl CommitDiff {
             }
         }
 
-        let content = response.into_string()?;
+        let mut content = String::new();
+        response
+            .into_reader()
+            .take(MAX_DIFF_FETCH_BYTES as u64)
+            .read_to_string(&mut content)?;
         tracing::debug!("Diff content length: {}", content.len());
         Ok(content)
     }

@@ -1,13 +1,45 @@
 use crate::db;
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 use tracing::{error, warn};
+
+static WELCOME_RATE_LIMITS: OnceLock<Mutex<HashMap<serenity::GuildId, Instant>>> = OnceLock::new();
+
+const WELCOME_RATE_LIMIT_SECONDS: u64 = 2;
+
+fn check_guild_welcome_rate_limit(guild_id: serenity::GuildId) -> bool {
+    let rate_limits = WELCOME_RATE_LIMITS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = match rate_limits.lock() {
+        Ok(guard) => guard,
+        Err(_) => return true,
+    };
+
+    if let Some(last) = map.get(&guild_id)
+        && last.elapsed().as_secs() < WELCOME_RATE_LIMIT_SECONDS
+    {
+        return false;
+    }
+
+    map.insert(guild_id, Instant::now());
+    true
+}
 
 pub async fn handle_member_join(
     ctx: &serenity::Context,
     member: &serenity::Member,
     pool: Option<&PgPool>,
 ) {
+    if member.user.bot() {
+        return;
+    }
+
+    if !check_guild_welcome_rate_limit(member.guild_id) {
+        return;
+    }
+
     let Some(pool) = pool else {
         return;
     };

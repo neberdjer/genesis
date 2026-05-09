@@ -105,10 +105,6 @@ pub async fn handle_twitter_links(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    if !shared::pre_check(msg, pool, SettingCheck::Twitter).await {
-        return;
-    }
-
     let mut found_urls: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for word in msg.content.split_whitespace() {
@@ -122,6 +118,10 @@ pub async fn handle_twitter_links(
     }
 
     if found_urls.is_empty() {
+        return;
+    }
+
+    if !shared::pre_check(msg, pool, SettingCheck::Twitter).await {
         return;
     }
 

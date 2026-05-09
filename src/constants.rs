@@ -5,6 +5,10 @@ pub const DEFAULT_PREFIX: &str = "!";
 pub const DEFAULT_ENVIRONMENT: &str = "prod";
 pub const MAX_DIFF_CHARS_PER_FILE: usize = 1800;
 pub const FILES_PER_PAGE: usize = 1;
+pub const MAX_FILE_FETCH_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_DIFF_FETCH_BYTES: usize = 10 * 1024 * 1024;
+pub const SPACES_PER_TAB: &str = "    ";
+pub const MAX_FILE_CHARS: usize = 1700;
 
 pub const INSTAGRAM_DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 pub const INSTAGRAM_MOBILE_UA: &str = "Instagram 275.0.0.27.98 Android (33/13; 420dpi; 1080x2400; samsung; SM-G991B; o1s; exynos2100)";

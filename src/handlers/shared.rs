@@ -84,6 +84,33 @@ pub enum SettingCheck {
     GitDiffs,
 }
 
+pub fn is_safe_host(host: &str) -> bool {
+    let host = host.split(':').next().unwrap_or(host);
+
+    if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
+        return !ip.is_loopback()
+            && !ip.is_private()
+            && !ip.is_link_local()
+            && !ip.is_unspecified()
+            && !ip.is_broadcast();
+    }
+    if let Ok(ip) = host.parse::<std::net::Ipv6Addr>() {
+        return !ip.is_loopback() && !ip.is_unspecified();
+    }
+
+    let lower = host.to_lowercase();
+    if lower == "localhost"
+        || lower.ends_with(".local")
+        || lower.ends_with(".internal")
+        || lower.ends_with(".lan")
+        || lower.ends_with(".localdomain")
+    {
+        return false;
+    }
+
+    true
+}
+
 pub async fn pre_check_user(user_id: serenity::UserId, pool: Option<&PgPool>) -> bool {
     let Some(pool) = pool else {
         return true;
