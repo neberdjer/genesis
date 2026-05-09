@@ -1,58 +1,17 @@
+use crate::constants::{TWITTER_DESKTOP_UA, TWITTER_SYNDICATION_UA};
 use regex::Regex;
-use serde::Deserialize;
+use serde_json::Value;
 use std::sync::OnceLock;
+use std::time::Duration;
+use tracing::debug;
 
 static TWITTER_PATTERN: OnceLock<Regex> = OnceLock::new();
-
-#[derive(Debug, Deserialize)]
-struct FxTwitterResponse {
-    tweet: TweetData,
-}
-
-#[derive(Debug, Deserialize)]
-struct TweetData {
-    author: AuthorData,
-    text: String,
-    #[serde(default)]
-    media: Option<MediaData>,
-    #[serde(default)]
-    replying_to: Option<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    replying_to_status: Option<String>,
-    #[serde(default)]
-    quote: Option<Box<TweetData>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AuthorData {
-    name: String,
-    screen_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct MediaData {
-    #[serde(default)]
-    photos: Vec<PhotoItem>,
-    #[serde(default)]
-    videos: Vec<VideoItem>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PhotoItem {
-    url: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct VideoItem {
-    url: String,
-}
 
 pub struct TwitterPost {
     pub author: String,
     pub username: String,
     pub text: String,
-    pub images: Vec<String>,
+    pub media: Vec<String>,
     pub replying_to: Option<String>,
     pub quote_author: Option<String>,
     pub quote_username: Option<String>,
@@ -60,70 +19,318 @@ pub struct TwitterPost {
 }
 
 impl TwitterPost {
-    pub fn parse(url: &str) -> Option<(String, String)> {
-        let pattern = TWITTER_PATTERN.get_or_init(|| {
-            Regex::new(r"(?i)https?://(?:www\.)?(twitter\.com|x\.com)/([a-zA-Z0-9_]+)/status/(\d+)")
-                .unwrap()
-        });
-
-        let captures = pattern.captures(url)?;
-        let username = captures.get(2)?.as_str().to_string();
-        let tweet_id = captures.get(3)?.as_str().to_string();
-
-        Some((username, tweet_id))
-    }
-
-    pub fn fetch(
-        username: &str,
-        tweet_id: &str,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let api_url = format!("https://api.fxtwitter.com/{}/status/{}", username, tweet_id);
-
-        let response = ureq::get(&api_url)
-            .set("User-Agent", "Mozilla/5.0 (compatible; GenesisBot/1.0)")
-            .call()?;
-
-        let data: FxTwitterResponse = response.into_json()?;
-        let tweet = data.tweet;
-
-        let mut images = tweet
-            .media
-            .as_ref()
-            .map(|m| {
-                let mut all_media = m.photos.iter().map(|p| p.url.clone()).collect::<Vec<_>>();
-                all_media.extend(m.videos.iter().map(|v| v.url.clone()));
-                all_media
-            })
-            .unwrap_or_default();
-
-        let (quote_author, quote_username, quote_text) = if let Some(quoted) = &tweet.quote {
-            if let Some(quoted_media) = &quoted.media {
-                let mut quoted_images = quoted_media
-                    .photos
-                    .iter()
-                    .map(|p| p.url.clone())
-                    .collect::<Vec<_>>();
-                quoted_images.extend(quoted_media.videos.iter().map(|v| v.url.clone()));
-                images.extend(quoted_images);
-            }
-            (
-                Some(quoted.author.name.clone()),
-                Some(quoted.author.screen_name.clone()),
-                Some(quoted.text.clone()),
-            )
+    pub fn fetch(url: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let tweet_id = if let Some(id) = Self::extract_tweet_id(url) {
+            id
+        } else if url.contains("t.co/") {
+            let resolved = Self::resolve_tco_link(url).ok_or("Failed to resolve t.co link")?;
+            Self::extract_tweet_id(&resolved)
+                .ok_or("Resolved t.co link did not contain a tweet ID")?
         } else {
-            (None, None, None)
+            return Err("Not a recognizable Twitter URL".into());
         };
 
+        Self::fetch_by_id(&tweet_id)
+    }
+
+    fn fetch_by_id(tweet_id: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let token = Self::syndication_token(tweet_id);
+        let api_url = format!(
+            "https://cdn.syndication.twimg.com/tweet-result?id={}&token={}&lang=en",
+            tweet_id, token
+        );
+
+        let mut last_err: String = "Unknown error".to_string();
+        for attempt in 0..2 {
+            match ureq::get(&api_url)
+                .set("User-Agent", TWITTER_SYNDICATION_UA)
+                .set("Accept", "*/*")
+                .set("Accept-Language", "en-US,en;q=0.9")
+                .set("Origin", "https://platform.twitter.com")
+                .set("Referer", "https://platform.twitter.com/")
+                .timeout(Duration::from_secs(15))
+                .call()
+            {
+                Ok(response) => match response.into_json::<Value>() {
+                    Ok(json) => {
+                        let typename = json
+                            .get("__typename")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("");
+
+                        if typename == "TweetTombstone" {
+                            return Err("Tweet has been deleted or removed".into());
+                        }
+
+                        let is_empty = json.as_object().is_some_and(|obj| obj.is_empty());
+                        if is_empty || typename == "TweetUnavailable" {
+                            last_err = if typename.is_empty() {
+                                "Empty syndication response".to_string()
+                            } else {
+                                format!("Tweet unavailable (typename={})", typename)
+                            };
+                        } else {
+                            return Self::parse_tweet(&json);
+                        }
+                    }
+                    Err(e) => last_err = format!("Failed to parse syndication JSON: {}", e),
+                },
+                Err(e) => last_err = format!("Syndication HTTP error: {}", e),
+            }
+
+            if attempt == 0 {
+                debug!("Syndication attempt 1 failed for {}, retrying", tweet_id);
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        }
+
+        Err(last_err.into())
+    }
+
+    fn parse_tweet(item: &Value) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let user = item.get("user");
+        let author = user
+            .and_then(|u| u.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
+        let username = user
+            .and_then(|u| u.get("screen_name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let text = Self::tweet_text(item);
+        let text = Self::substitute_tco_urls(&text, item);
+
+        let replying_to = item
+            .get("in_reply_to_screen_name")
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string());
+
+        let mut media = Self::extract_media(item);
+
+        let (quote_author, quote_username, quote_text) =
+            if let Some(quoted) = item.get("quoted_tweet") {
+                let qauthor = quoted
+                    .get("user")
+                    .and_then(|u| u.get("name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let qusername = quoted
+                    .get("user")
+                    .and_then(|u| u.get("screen_name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let qtext = Self::tweet_text(quoted);
+                let qtext = Self::substitute_tco_urls(&qtext, quoted);
+
+                media.extend(Self::extract_media(quoted));
+
+                if qauthor.is_empty() && qusername.is_empty() && qtext.is_empty() {
+                    (None, None, None)
+                } else {
+                    (Some(qauthor), Some(qusername), Some(qtext))
+                }
+            } else {
+                (None, None, None)
+            };
+
         Ok(Self {
-            author: tweet.author.name,
-            username: tweet.author.screen_name,
-            text: tweet.text,
-            images,
-            replying_to: tweet.replying_to,
+            author,
+            username,
+            text,
+            media,
+            replying_to,
             quote_author,
             quote_username,
             quote_text,
         })
+    }
+
+    fn tweet_text(item: &Value) -> String {
+        item.get("note_tweet")
+            .and_then(|n| n.get("text"))
+            .and_then(|t| t.as_str())
+            .or_else(|| item.get("text").and_then(|t| t.as_str()))
+            .unwrap_or("")
+            .to_string()
+    }
+
+    fn extract_media(item: &Value) -> Vec<String> {
+        let mut media = Vec::new();
+        let Some(details) = item.get("mediaDetails").and_then(|m| m.as_array()) else {
+            return media;
+        };
+
+        for d in details {
+            let kind = d.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            match kind {
+                "video" | "animated_gif" => {
+                    if let Some(url) = Self::pick_best_video_variant(d) {
+                        media.push(url);
+                    } else if let Some(url) = d.get("media_url_https").and_then(|u| u.as_str()) {
+                        media.push(url.to_string());
+                    }
+                }
+                _ => {
+                    if let Some(url) = d.get("media_url_https").and_then(|u| u.as_str()) {
+                        media.push(format!("{}?name=orig", url));
+                    }
+                }
+            }
+        }
+        media
+    }
+
+    fn pick_best_video_variant(media_detail: &Value) -> Option<String> {
+        let variants = media_detail
+            .get("video_info")
+            .and_then(|v| v.get("variants"))
+            .and_then(|v| v.as_array())?;
+
+        let mut best_bitrate: i64 = -1;
+        let mut best_url: Option<String> = None;
+
+        for variant in variants {
+            let content_type = variant
+                .get("content_type")
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+            if content_type != "video/mp4" {
+                continue;
+            }
+            let url = variant.get("url").and_then(|u| u.as_str()).unwrap_or("");
+            if url.is_empty() || url.contains("/hevc/") {
+                continue;
+            }
+            let bitrate = variant.get("bitrate").and_then(|b| b.as_i64()).unwrap_or(0);
+            if bitrate > best_bitrate {
+                best_bitrate = bitrate;
+                best_url = Some(url.to_string());
+            }
+        }
+
+        best_url.map(|u| {
+            if let Some(idx) = u.find("?tag=") {
+                u[..idx].to_string()
+            } else {
+                u
+            }
+        })
+    }
+
+    fn substitute_tco_urls(text: &str, item: &Value) -> String {
+        let mut result = text.to_string();
+
+        if let Some(urls) = item
+            .get("entities")
+            .and_then(|e| e.get("urls"))
+            .and_then(|u| u.as_array())
+        {
+            for url_obj in urls {
+                let tco = url_obj.get("url").and_then(|u| u.as_str());
+                let expanded = url_obj.get("expanded_url").and_then(|u| u.as_str());
+                if let (Some(t), Some(e)) = (tco, expanded) {
+                    result = result.replace(t, e);
+                }
+            }
+        }
+
+        if let Some(media_entities) = item
+            .get("entities")
+            .and_then(|e| e.get("media"))
+            .and_then(|m| m.as_array())
+        {
+            for media_obj in media_entities {
+                if let Some(t) = media_obj.get("url").and_then(|u| u.as_str()) {
+                    result = result.replace(t, "");
+                }
+            }
+        }
+
+        Self::html_unescape(result.trim())
+    }
+
+    fn html_unescape(s: &str) -> String {
+        s.replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&#x27;", "'")
+    }
+
+    fn extract_tweet_id(url: &str) -> Option<String> {
+        let pattern = TWITTER_PATTERN.get_or_init(|| {
+            Regex::new(
+                r"(?i)https?://(?:[a-z0-9-]+\.)?(?:twitter|x)\.com/(?:i/web/|[^/?#]+/)?status/(\d+)",
+            )
+            .unwrap()
+        });
+        pattern
+            .captures(url)?
+            .get(1)
+            .map(|m| m.as_str().to_string())
+    }
+
+    fn resolve_tco_link(url: &str) -> Option<String> {
+        debug!("Resolving t.co link: {}", url);
+        let response = ureq::head(url)
+            .set("User-Agent", TWITTER_DESKTOP_UA)
+            .timeout(Duration::from_secs(10))
+            .call()
+            .ok()?;
+        let final_url = response.get_url().to_string();
+        if final_url == url {
+            let response = ureq::get(url)
+                .set("User-Agent", TWITTER_DESKTOP_UA)
+                .timeout(Duration::from_secs(10))
+                .call()
+                .ok()?;
+            return Some(response.get_url().to_string());
+        }
+        Some(final_url)
+    }
+
+    fn syndication_token(id_str: &str) -> String {
+        let id: f64 = id_str.parse::<f64>().unwrap_or(0.0);
+        let v = (id / 1e15) * std::f64::consts::PI;
+
+        let int_part = v.trunc() as u64;
+        let mut s = if int_part == 0 {
+            "0".to_string()
+        } else {
+            let mut tmp = String::new();
+            let mut x = int_part;
+            while x > 0 {
+                tmp.push(char::from_digit((x % 36) as u32, 36).unwrap());
+                x /= 36;
+            }
+            tmp.chars().rev().collect()
+        };
+
+        let mut frac = v.fract().abs();
+        if frac > 0.0 {
+            s.push('.');
+            for _ in 0..30 {
+                frac *= 36.0;
+                let d = frac.trunc() as u32;
+                s.push(char::from_digit(d, 36).unwrap());
+                frac -= d as f64;
+                if frac == 0.0 {
+                    break;
+                }
+            }
+        }
+
+        let result: String = s.chars().filter(|c| *c != '0' && *c != '.').collect();
+        if result.is_empty() {
+            "0".to_string()
+        } else {
+            result
+        }
     }
 }

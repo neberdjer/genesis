@@ -1,16 +1,36 @@
 use super::shared::{self, SettingCheck};
 use super::twitter_handler::TwitterPost;
+use crate::constants::TWITTER_DOWNLOAD_UA;
 use poise::serenity_prelude as serenity;
 use serde_json::json;
 use sqlx::PgPool;
 use tracing::{debug, warn};
 
 fn is_twitter_url(word: &str) -> bool {
-    (word.contains("twitter.com") || word.contains("x.com")) && word.contains("/status/")
+    let lower = word.to_ascii_lowercase();
+    if lower.contains("t.co/") {
+        return true;
+    }
+
+    let Some(scheme_end) = lower.find("://") else {
+        return false;
+    };
+    let after_scheme = &lower[scheme_end + 3..];
+    let host = after_scheme.split('/').next().unwrap_or("");
+    let normalized = host
+        .trim_start_matches("www.")
+        .trim_start_matches("mobile.")
+        .trim_start_matches("m.");
+    if normalized != "twitter.com" && normalized != "x.com" {
+        return false;
+    }
+
+    lower.contains("/status/")
 }
 
 fn clean_url(url: &str) -> &str {
-    url.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
+    let trimmed = url.trim_start_matches(|c: char| !c.is_alphanumeric());
+    trimmed.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
 }
 
 fn media_filename(index: usize, url: &str) -> String {
@@ -33,14 +53,19 @@ pub async fn handle_twitter_links(
         return;
     }
 
-    let found_tweets: Vec<(String, String)> = msg
-        .content
-        .split_whitespace()
-        .filter(|word| is_twitter_url(word))
-        .filter_map(|word| TwitterPost::parse(clean_url(word)))
-        .collect();
+    let mut found_urls: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for word in msg.content.split_whitespace() {
+        if !is_twitter_url(word) {
+            continue;
+        }
+        let cleaned = clean_url(word).to_string();
+        if seen.insert(cleaned.clone()) {
+            found_urls.push(cleaned);
+        }
+    }
 
-    if found_tweets.is_empty() {
+    if found_urls.is_empty() {
         return;
     }
 
@@ -50,11 +75,10 @@ pub async fn handle_twitter_links(
     }
 
     let mut any_sent = false;
-    for (username, tweet_id) in found_tweets {
-        debug!("Fetching tweet: username={}, id={}", username, tweet_id);
-        let u = username.clone();
-        let t = tweet_id.clone();
-        match shared::spawn_blocking_fetch(move || TwitterPost::fetch(&u, &t)).await {
+    for url in found_urls {
+        debug!("Fetching tweet: url={}", url);
+        let url_owned = url.clone();
+        match shared::spawn_blocking_fetch(move || TwitterPost::fetch(&url_owned)).await {
             Ok(post) => {
                 let mut content = format!("**{}** (@{})", post.author, post.username);
 
@@ -62,7 +86,9 @@ pub async fn handle_twitter_links(
                     content.push_str(&format!("\nReplying to @{}", replying_to));
                 }
 
-                content.push_str(&format!("\n{}", post.text));
+                if !post.text.is_empty() {
+                    content.push_str(&format!("\n{}", post.text));
+                }
 
                 if let Some(quote_author) = &post.quote_author
                     && let (Some(quote_username), Some(quote_text)) =
@@ -80,13 +106,12 @@ pub async fn handle_twitter_links(
                 })];
 
                 let mut attachments = Vec::new();
-                if !post.images.is_empty() {
+                if !post.media.is_empty() {
                     let mut media_items = Vec::new();
-                    for (i, url) in post.images.iter().enumerate() {
-                        let filename = media_filename(i, url);
+                    for (i, media_url) in post.media.iter().enumerate() {
+                        let filename = media_filename(i, media_url);
                         if let Some(data) =
-                            shared::download_media(url, "Mozilla/5.0 (compatible; GenesisBot/1.0)")
-                                .await
+                            shared::download_media(media_url, TWITTER_DOWNLOAD_UA).await
                         {
                             attachments
                                 .push(serenity::CreateAttachment::bytes(data, filename.clone()));
@@ -96,7 +121,7 @@ pub async fn handle_twitter_links(
                                 }
                             }));
                         } else {
-                            warn!("Failed to download media: {}", url);
+                            warn!("Failed to download media: {}", media_url);
                         }
                     }
 
@@ -129,7 +154,7 @@ pub async fn handle_twitter_links(
                     Err(e) => warn!("Failed to send tweet message: {}", e),
                 }
             }
-            Err(e) => warn!("Failed to fetch tweet {}/{}: {}", username, tweet_id, e),
+            Err(e) => warn!("Failed to fetch tweet {}: {}", url, e),
         }
     }
 
