@@ -2,9 +2,10 @@ use super::shared::{self, SettingCheck};
 use super::twitter_handler::TwitterPost;
 use crate::constants::TWITTER_DOWNLOAD_UA;
 use poise::serenity_prelude as serenity;
-use serde_json::json;
 use sqlx::PgPool;
 use tracing::{debug, warn};
+
+const TWITTER_ACCENT_COLOR: u32 = 0x1DA1F2;
 
 fn is_twitter_url(word: &str) -> bool {
     let lower = word.to_ascii_lowercase();
@@ -44,6 +45,61 @@ fn media_filename(index: usize, url: &str) -> String {
     format!("twitter_{}.{}", index, ext)
 }
 
+pub async fn build_container(
+    post: &TwitterPost,
+) -> (
+    Vec<serenity::CreateAttachment<'static>>,
+    serenity::CreateContainer<'static>,
+) {
+    let mut content = format!("**{}** (@{})", post.author, post.username);
+
+    if let Some(replying_to) = &post.replying_to {
+        content.push_str(&format!("\nReplying to @{}", replying_to));
+    }
+
+    if !post.text.is_empty() {
+        content.push_str(&format!("\n{}", post.text));
+    }
+
+    if let Some(quote_author) = &post.quote_author
+        && let (Some(quote_username), Some(quote_text)) = (&post.quote_username, &post.quote_text)
+    {
+        content.push_str(&format!(
+            "\n\n> **{}** (@{})\n> {}",
+            quote_author, quote_username, quote_text
+        ));
+    }
+
+    let mut components: Vec<serenity::CreateContainerComponent<'static>> =
+        vec![serenity::CreateContainerComponent::TextDisplay(
+            serenity::CreateTextDisplay::new(content),
+        )];
+
+    let mut attachments = Vec::new();
+    let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
+    for (i, media_url) in post.media.iter().enumerate() {
+        let filename = media_filename(i, media_url);
+        if let Some(data) = shared::download_media(media_url, TWITTER_DOWNLOAD_UA).await {
+            let attachment_url = format!("attachment://{}", filename);
+            attachments.push(serenity::CreateAttachment::bytes(data, filename));
+            gallery_items.push(serenity::CreateMediaGalleryItem::new(
+                serenity::CreateUnfurledMediaItem::new(attachment_url),
+            ));
+        } else {
+            warn!("Failed to download media: {}", media_url);
+        }
+    }
+
+    if !gallery_items.is_empty() {
+        components.push(serenity::CreateContainerComponent::MediaGallery(
+            serenity::CreateMediaGallery::new(gallery_items),
+        ));
+    }
+
+    let container = serenity::CreateContainer::new(components).accent_color(TWITTER_ACCENT_COLOR);
+    (attachments, container)
+}
+
 pub async fn handle_twitter_links(
     ctx: &serenity::Context,
     msg: &serenity::Message,
@@ -80,80 +136,15 @@ pub async fn handle_twitter_links(
         let url_owned = url.clone();
         match shared::spawn_blocking_fetch(move || TwitterPost::fetch(&url_owned)).await {
             Ok(post) => {
-                let mut content = format!("**{}** (@{})", post.author, post.username);
+                let (attachments, container) = build_container(&post).await;
+                let message = serenity::CreateMessage::new()
+                    .components(vec![serenity::CreateComponent::Container(container)])
+                    .flags(serenity::MessageFlags::IS_COMPONENTS_V2)
+                    .reference_message(msg)
+                    .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
+                    .files(attachments);
 
-                if let Some(replying_to) = &post.replying_to {
-                    content.push_str(&format!("\nReplying to @{}", replying_to));
-                }
-
-                if !post.text.is_empty() {
-                    content.push_str(&format!("\n{}", post.text));
-                }
-
-                if let Some(quote_author) = &post.quote_author
-                    && let (Some(quote_username), Some(quote_text)) =
-                        (&post.quote_username, &post.quote_text)
-                {
-                    content.push_str(&format!(
-                        "\n\n> **{}** (@{})\n> {}",
-                        quote_author, quote_username, quote_text
-                    ));
-                }
-
-                let mut container_components = vec![json!({
-                    "type": 10,
-                    "content": content
-                })];
-
-                let mut attachments = Vec::new();
-                if !post.media.is_empty() {
-                    let mut media_items = Vec::new();
-                    for (i, media_url) in post.media.iter().enumerate() {
-                        let filename = media_filename(i, media_url);
-                        if let Some(data) =
-                            shared::download_media(media_url, TWITTER_DOWNLOAD_UA).await
-                        {
-                            attachments
-                                .push(serenity::CreateAttachment::bytes(data, filename.clone()));
-                            media_items.push(json!({
-                                "media": {
-                                    "url": format!("attachment://{}", filename)
-                                }
-                            }));
-                        } else {
-                            warn!("Failed to download media: {}", media_url);
-                        }
-                    }
-
-                    if !media_items.is_empty() {
-                        container_components.push(json!({
-                            "type": 12,
-                            "items": media_items
-                        }));
-                    }
-                }
-
-                let payload = json!({
-                    "components": [{
-                        "type": 17,
-                        "accent_color": 0x1DA1F2,
-                        "components": container_components
-                    }],
-                    "message_reference": {
-                        "message_id": msg.id.to_string()
-                    },
-                    "allowed_mentions": {
-                        "parse": [],
-                        "replied_user": false
-                    },
-                    "flags": 1 << 15
-                });
-
-                match ctx
-                    .http
-                    .send_message(msg.channel_id, attachments, &payload)
-                    .await
-                {
+                match msg.channel_id.send_message(&ctx.http, message).await {
                     Ok(_) => any_sent = true,
                     Err(e) => warn!("Failed to send tweet message: {}", e),
                 }

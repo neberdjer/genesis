@@ -1,9 +1,11 @@
 use super::shared::{self, SettingCheck};
 use super::tiktok_handler::TikTokPost;
+use crate::constants::TIKTOK_DOWNLOAD_UA;
 use poise::serenity_prelude as serenity;
-use serde_json::json;
 use sqlx::PgPool;
 use tracing::{debug, warn};
+
+const TIKTOK_ACCENT_COLOR: u32 = 0x000000;
 
 fn is_tiktok_url(word: &str) -> bool {
     word.contains("tiktok.com")
@@ -22,6 +24,47 @@ fn media_filename(index: usize, url: &str) -> String {
         "jpg"
     };
     format!("tiktok_{}.{}", index, ext)
+}
+
+pub async fn build_container(
+    post: &TikTokPost,
+) -> (
+    Vec<serenity::CreateAttachment<'static>>,
+    serenity::CreateContainer<'static>,
+) {
+    let mut content = format!("**{}** (@{})", post.author, post.username);
+    if !post.text.is_empty() {
+        content.push_str(&format!("\n{}", post.text));
+    }
+
+    let mut components: Vec<serenity::CreateContainerComponent<'static>> =
+        vec![serenity::CreateContainerComponent::TextDisplay(
+            serenity::CreateTextDisplay::new(content),
+        )];
+
+    let mut attachments = Vec::new();
+    let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
+    for (i, media_url) in post.media.iter().enumerate() {
+        let filename = media_filename(i, media_url);
+        if let Some(data) = shared::download_media(media_url, TIKTOK_DOWNLOAD_UA).await {
+            let attachment_url = format!("attachment://{}", filename);
+            attachments.push(serenity::CreateAttachment::bytes(data, filename));
+            gallery_items.push(serenity::CreateMediaGalleryItem::new(
+                serenity::CreateUnfurledMediaItem::new(attachment_url),
+            ));
+        } else {
+            warn!("Failed to download media: {}", media_url);
+        }
+    }
+
+    if !gallery_items.is_empty() {
+        components.push(serenity::CreateContainerComponent::MediaGallery(
+            serenity::CreateMediaGallery::new(gallery_items),
+        ));
+    }
+
+    let container = serenity::CreateContainer::new(components).accent_color(TIKTOK_ACCENT_COLOR);
+    (attachments, container)
 }
 
 pub async fn handle_tiktok_links(
@@ -55,64 +98,15 @@ pub async fn handle_tiktok_links(
         let url = video_url.clone();
         match shared::spawn_blocking_fetch(move || TikTokPost::fetch(&url)).await {
             Ok(post) => {
-                let mut content = format!("**{}** (@{})", post.author, post.username);
-                content.push_str(&format!("\n{}", post.text));
+                let (attachments, container) = build_container(&post).await;
+                let message = serenity::CreateMessage::new()
+                    .components(vec![serenity::CreateComponent::Container(container)])
+                    .flags(serenity::MessageFlags::IS_COMPONENTS_V2)
+                    .reference_message(msg)
+                    .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
+                    .files(attachments);
 
-                let mut container_components = vec![json!({
-                    "type": 10,
-                    "content": content
-                })];
-
-                let mut attachments = Vec::new();
-                if !post.media.is_empty() {
-                    let mut media_items = Vec::new();
-                    for (i, url) in post.media.iter().enumerate() {
-                        let filename = media_filename(i, url);
-                        if let Some(data) =
-                            shared::download_media(url, "Mozilla/5.0 (compatible; GenesisBot/1.0)")
-                                .await
-                        {
-                            attachments
-                                .push(serenity::CreateAttachment::bytes(data, filename.clone()));
-                            media_items.push(json!({
-                                "media": {
-                                    "url": format!("attachment://{}", filename)
-                                }
-                            }));
-                        } else {
-                            warn!("Failed to download media: {}", url);
-                        }
-                    }
-
-                    if !media_items.is_empty() {
-                        container_components.push(json!({
-                            "type": 12,
-                            "items": media_items
-                        }));
-                    }
-                }
-
-                let payload = json!({
-                    "components": [{
-                        "type": 17,
-                        "accent_color": 0x000000,
-                        "components": container_components
-                    }],
-                    "message_reference": {
-                        "message_id": msg.id.to_string()
-                    },
-                    "allowed_mentions": {
-                        "parse": [],
-                        "replied_user": false
-                    },
-                    "flags": 1 << 15
-                });
-
-                match ctx
-                    .http
-                    .send_message(msg.channel_id, attachments, &payload)
-                    .await
-                {
+                match msg.channel_id.send_message(&ctx.http, message).await {
                     Ok(_) => any_sent = true,
                     Err(e) => warn!("Failed to send TikTok message: {}", e),
                 }

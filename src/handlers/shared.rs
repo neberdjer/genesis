@@ -84,6 +84,21 @@ pub enum SettingCheck {
     GitDiffs,
 }
 
+pub async fn pre_check_user(user_id: serenity::UserId, pool: Option<&PgPool>) -> bool {
+    let Some(pool) = pool else {
+        return true;
+    };
+
+    match db::is_user_blacklisted(pool, &user_id.to_string()).await {
+        Ok(true) => false,
+        Err(e) => {
+            warn!("Failed to check user blacklist: {}", e);
+            true
+        }
+        _ => true,
+    }
+}
+
 pub async fn pre_check(
     msg: &serenity::Message,
     pool: Option<&PgPool>,

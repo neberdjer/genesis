@@ -1,9 +1,9 @@
 mod git_diff_handler;
 mod git_handler;
-mod instagram_handler;
+pub(crate) mod instagram_handler;
 pub(crate) mod shared;
-mod tiktok_handler;
-mod twitter_handler;
+pub(crate) mod tiktok_handler;
+pub(crate) mod twitter_handler;
 
 pub mod git_diffs;
 pub mod git_links;

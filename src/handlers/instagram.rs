@@ -2,9 +2,18 @@ use super::instagram_handler::InstagramPost;
 use super::shared::{self, SettingCheck};
 use crate::constants::{INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS};
 use poise::serenity_prelude as serenity;
-use serde_json::json;
 use sqlx::PgPool;
 use tracing::{debug, warn};
+
+const INSTAGRAM_ACCENT_COLOR: u32 = 0xE4405F;
+
+fn ua_for_media_url(url: &str) -> &'static str {
+    if INSTAGRAM_MIRRORS.iter().any(|m| url.contains(m)) {
+        INSTAGRAM_MIRROR_UA
+    } else {
+        INSTAGRAM_DESKTOP_UA
+    }
+}
 
 fn is_instagram_url(word: &str) -> bool {
     let lower = word.to_ascii_lowercase();
@@ -23,14 +32,6 @@ fn clean_url(url: &str) -> &str {
     trimmed.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
 }
 
-fn ua_for_media_url(url: &str) -> &'static str {
-    if INSTAGRAM_MIRRORS.iter().any(|m| url.contains(m)) {
-        INSTAGRAM_MIRROR_UA
-    } else {
-        INSTAGRAM_DESKTOP_UA
-    }
-}
-
 fn media_filename(index: usize, url: &str) -> String {
     let ext = if url.contains(".mp4") || url.contains("video") {
         "mp4"
@@ -40,6 +41,47 @@ fn media_filename(index: usize, url: &str) -> String {
         "jpg"
     };
     format!("instagram_{}.{}", index, ext)
+}
+
+pub async fn build_container(
+    post: &InstagramPost,
+) -> (
+    Vec<serenity::CreateAttachment<'static>>,
+    serenity::CreateContainer<'static>,
+) {
+    let mut content = format!("**{}** (@{})", post.author, post.username);
+    if !post.text.is_empty() {
+        content.push_str(&format!("\n{}", post.text));
+    }
+
+    let mut components: Vec<serenity::CreateContainerComponent<'static>> =
+        vec![serenity::CreateContainerComponent::TextDisplay(
+            serenity::CreateTextDisplay::new(content),
+        )];
+
+    let mut attachments = Vec::new();
+    let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
+    for (i, media_url) in post.media.iter().enumerate() {
+        let filename = media_filename(i, media_url);
+        if let Some(data) = shared::download_media(media_url, ua_for_media_url(media_url)).await {
+            let attachment_url = format!("attachment://{}", filename);
+            attachments.push(serenity::CreateAttachment::bytes(data, filename));
+            gallery_items.push(serenity::CreateMediaGalleryItem::new(
+                serenity::CreateUnfurledMediaItem::new(attachment_url),
+            ));
+        } else {
+            warn!("Failed to download media: {}", media_url);
+        }
+    }
+
+    if !gallery_items.is_empty() {
+        components.push(serenity::CreateContainerComponent::MediaGallery(
+            serenity::CreateMediaGallery::new(gallery_items),
+        ));
+    }
+
+    let container = serenity::CreateContainer::new(components).accent_color(INSTAGRAM_ACCENT_COLOR);
+    (attachments, container)
 }
 
 pub async fn handle_instagram_links(
@@ -78,65 +120,15 @@ pub async fn handle_instagram_links(
         let url_owned = url.clone();
         match shared::spawn_blocking_fetch(move || InstagramPost::fetch(&url_owned)).await {
             Ok(post) => {
-                let mut content = format!("**{}** (@{})", post.author, post.username);
-                if !post.text.is_empty() {
-                    content.push_str(&format!("\n{}", post.text));
-                }
+                let (attachments, container) = build_container(&post).await;
+                let message = serenity::CreateMessage::new()
+                    .components(vec![serenity::CreateComponent::Container(container)])
+                    .flags(serenity::MessageFlags::IS_COMPONENTS_V2)
+                    .reference_message(msg)
+                    .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
+                    .files(attachments);
 
-                let mut container_components = vec![json!({
-                    "type": 10,
-                    "content": content
-                })];
-
-                let mut attachments = Vec::new();
-                if !post.media.is_empty() {
-                    let mut media_items = Vec::new();
-                    for (i, media_url) in post.media.iter().enumerate() {
-                        let filename = media_filename(i, media_url);
-                        if let Some(data) =
-                            shared::download_media(media_url, ua_for_media_url(media_url)).await
-                        {
-                            attachments
-                                .push(serenity::CreateAttachment::bytes(data, filename.clone()));
-                            media_items.push(json!({
-                                "media": {
-                                    "url": format!("attachment://{}", filename)
-                                }
-                            }));
-                        } else {
-                            warn!("Failed to download media: {}", media_url);
-                        }
-                    }
-
-                    if !media_items.is_empty() {
-                        container_components.push(json!({
-                            "type": 12,
-                            "items": media_items
-                        }));
-                    }
-                }
-
-                let payload = json!({
-                    "components": [{
-                        "type": 17,
-                        "accent_color": 0xE4405F,
-                        "components": container_components
-                    }],
-                    "message_reference": {
-                        "message_id": msg.id.to_string()
-                    },
-                    "allowed_mentions": {
-                        "parse": [],
-                        "replied_user": false
-                    },
-                    "flags": 1 << 15
-                });
-
-                match ctx
-                    .http
-                    .send_message(msg.channel_id, attachments, &payload)
-                    .await
-                {
+                match msg.channel_id.send_message(&ctx.http, message).await {
                     Ok(_) => any_sent = true,
                     Err(e) => warn!("Failed to send Instagram message: {}", e),
                 }

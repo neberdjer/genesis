@@ -23,3 +23,5 @@ pub const INSTAGRAM_MAX_CAROUSEL_SLIDES: usize = 20;
 pub const TWITTER_SYNDICATION_UA: &str = "Googlebot";
 pub const TWITTER_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
 pub const TWITTER_DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+pub const TIKTOK_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
