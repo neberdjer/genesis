@@ -80,6 +80,7 @@ pub enum SettingCheck {
     TikTok,
     Instagram,
     Twitter,
+    Reddit,
     GitLinks,
     GitDiffs,
 }
@@ -218,6 +219,7 @@ pub async fn pre_check(
                     SettingCheck::TikTok => settings.tiktok_enabled,
                     SettingCheck::Instagram => settings.instagram_enabled,
                     SettingCheck::Twitter => settings.twitter_enabled,
+                    SettingCheck::Reddit => settings.reddit_enabled,
                     SettingCheck::GitLinks => settings.git_links_enabled,
                     SettingCheck::GitDiffs => settings.git_diffs_enabled,
                 };

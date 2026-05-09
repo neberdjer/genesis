@@ -14,6 +14,7 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
         media::instagram(),
         media::twitter(),
         media::tiktok(),
+        media::reddit(),
         settings::settings(),
         welcome::welcome(),
     ];

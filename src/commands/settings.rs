@@ -159,6 +159,7 @@ async fn autocomplete_service<'a>(
         "twitter",
         "tiktok",
         "instagram",
+        "reddit",
     ];
 
     let choices: Vec<_> = services
