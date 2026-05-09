@@ -5,6 +5,7 @@ use tracing::info;
 
 use super::check_owner;
 
+/// Owner-only blacklist controls for users, servers, and domains
 #[poise::command(
     slash_command,
     prefix_command,
@@ -20,21 +21,42 @@ use super::check_owner;
     )
 )]
 pub async fn blacklist(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say("Usage: `/blacklist add`, `/blacklist remove`, `/blacklist add_server`, `/blacklist remove_server`, `/blacklist add_domain`, `/blacklist remove_domain`, `/blacklist domains`").await?;
+    ctx.say(
+        "Available subcommands:\n\
+         - `/blacklist add` — blacklist a user\n\
+         - `/blacklist remove` — remove a user from the blacklist\n\
+         - `/blacklist add_server` — blacklist a server\n\
+         - `/blacklist remove_server` — remove a server from the blacklist\n\
+         - `/blacklist add_domain` — globally block a domain\n\
+         - `/blacklist remove_domain` — remove a domain from the global blocklist\n\
+         - `/blacklist domains` — list globally blocked domains",
+    )
+    .await?;
     Ok(())
 }
 
+/// Globally block a domain across every server (subdomains too)
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn add_domain(
     ctx: Context<'_>,
-    #[description = "Domain to globally block (e.g. tiktok.com); subdomains also blocked"]
-    domain: String,
+    #[description = "Domain to globally block (e.g. tiktok.com)"] domain: String,
 ) -> Result<(), Error> {
     let pool = &ctx.data().pool;
 
     let normalized = normalize_domain(&domain);
     if normalized.is_empty() || !normalized.contains('.') {
         ctx.say("Invalid domain. Provide something like `tiktok.com`.")
+            .await?;
+        return Ok(());
+    }
+
+    let already = db::list_global_blocked_domains(pool)
+        .await
+        .map(|list| list.iter().any(|d| d == &normalized))
+        .unwrap_or(false);
+
+    if already {
+        ctx.say(format!("**{}** is already globally blocked.", normalized))
             .await?;
         return Ok(());
     }
@@ -48,13 +70,14 @@ async fn add_domain(
     );
 
     ctx.say(format!(
-        "**{}** has been globally blocked (subdomains too)",
+        "**{}** has been globally blocked. Subdomains are also blocked.",
         normalized
     ))
     .await?;
     Ok(())
 }
 
+/// Remove a domain from the global blocklist
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn remove_domain(
     ctx: Context<'_>,
@@ -71,13 +94,13 @@ async fn remove_domain(
             ctx.author().name
         );
         ctx.say(format!(
-            "**{}** removed from the global blocklist",
+            "**{}** has been removed from the global blocklist.",
             normalized
         ))
         .await?;
     } else {
         ctx.say(format!(
-            "**{}** was not in the global blocklist",
+            "**{}** is not on the global blocklist.",
             normalized
         ))
         .await?;
@@ -85,6 +108,7 @@ async fn remove_domain(
     Ok(())
 }
 
+/// List all globally blocked domains
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn domains(ctx: Context<'_>) -> Result<(), Error> {
     let pool = &ctx.data().pool;
@@ -104,6 +128,7 @@ async fn domains(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
+/// Blacklist a user from using the bot
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn add(
     ctx: Context<'_>,
@@ -127,18 +152,21 @@ async fn add(
         reason.as_deref().unwrap_or("No reason provided")
     );
 
+    let reason_part = reason
+        .map(|r| format!("\n**Reason:** {}", r))
+        .unwrap_or_default();
+
     ctx.say(format!(
-        "**{}** has been blacklisted{}",
+        "**{}** has been blacklisted.{}",
         user.tag(),
-        reason
-            .map(|r| format!(" - Reason: {}", r))
-            .unwrap_or_default()
+        reason_part
     ))
     .await?;
 
     Ok(())
 }
 
+/// Remove a user from the blacklist
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn remove(
     ctx: Context<'_>,
@@ -156,18 +184,19 @@ async fn remove(
         );
 
         ctx.say(format!(
-            "**{}** has been removed from the blacklist",
+            "**{}** has been removed from the blacklist.",
             user.tag()
         ))
         .await?;
     } else {
-        ctx.say(format!("**{}** was not in the blacklist", user.tag()))
+        ctx.say(format!("**{}** is not on the blacklist.", user.tag()))
             .await?;
     }
 
     Ok(())
 }
 
+/// Blacklist a server (the bot will refuse to operate there)
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn add_server(
     ctx: Context<'_>,
@@ -191,18 +220,20 @@ async fn add_server(
         reason.as_deref().unwrap_or("No reason provided")
     );
 
+    let reason_part = reason
+        .map(|r| format!("\n**Reason:** {}", r))
+        .unwrap_or_default();
+
     ctx.say(format!(
-        "Server **{}** has been blacklisted{}",
-        guild_id,
-        reason
-            .map(|r| format!(" - Reason: {}", r))
-            .unwrap_or_default()
+        "Server **{}** has been blacklisted.{}",
+        guild_id, reason_part
     ))
     .await?;
 
     Ok(())
 }
 
+/// Remove a server from the blacklist
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 async fn remove_server(
     ctx: Context<'_>,
@@ -220,12 +251,12 @@ async fn remove_server(
         );
 
         ctx.say(format!(
-            "Server **{}** has been removed from the blacklist",
+            "Server **{}** has been removed from the blacklist.",
             guild_id
         ))
         .await?;
     } else {
-        ctx.say(format!("Server **{}** was not in the blacklist", guild_id))
+        ctx.say(format!("Server **{}** is not on the blacklist.", guild_id))
             .await?;
     }
 

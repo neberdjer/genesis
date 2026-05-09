@@ -131,6 +131,7 @@ fn parse_timezone(tz_str: &str) -> Result<TimezoneType, Error> {
         .map_err(|_| format!("Invalid timezone: {}", tz_str).into())
 }
 
+/// Convert a time between timezones
 #[poise::command(slash_command, prefix_command)]
 pub async fn time(
     ctx: Context<'_>,
@@ -156,7 +157,7 @@ pub async fn time(
     } else {
         let naive_time = NaiveTime::parse_from_str(time_trimmed, "%H:%M")
             .or_else(|_| NaiveTime::parse_from_str(time_trimmed, "%H:%M:%S"))
-            .map_err(|_| "Invalid time format. Use HH:MM or HH:MM:SS")?;
+            .map_err(|_| "Invalid time format. Use HH:MM or HH:MM:SS.")?;
 
         let today = Local::now().date_naive();
         let naive_datetime = today.and_time(naive_time);

@@ -16,18 +16,19 @@ pub async fn kick(
 ) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
-        .ok_or("This command can only be used in a server")?;
+        .ok_or("This command can only be used in a server.")?;
 
     if user.id == ctx.author().id {
-        ctx.say("You cannot kick yourself").await?;
+        ctx.say("You cannot kick yourself.").await?;
         return Ok(());
     }
 
     if user.id == ctx.framework().bot_id() {
-        ctx.say("Fine, I'll leave...").await?;
+        ctx.say("Leaving the server as requested.").await?;
 
         if let Err(e) = guild_id.leave(ctx.http()).await {
-            ctx.say(format!("Failed to leave server: {}", e)).await?;
+            tracing::warn!("Failed to leave server {}: {}", guild_id, e);
+            ctx.say("Failed to leave the server.").await?;
         } else {
             info!(
                 "Bot was kicked from server {} by {}",
@@ -45,7 +46,7 @@ pub async fn kick(
 
         let guild = guild_id.to_partial_guild(ctx).await?;
         if target_member.user.id == guild.owner_id {
-            ctx.say("Cannot kick the server owner").await?;
+            ctx.say("You cannot kick the server owner.").await?;
             return Ok(());
         }
 
@@ -54,18 +55,18 @@ pub async fn kick(
         let bot_highest = super::get_highest_role(ctx, guild_id, &bot_member);
 
         if target_highest >= author_highest {
-            ctx.say("Cannot kick this user - they have equal or higher role than you")
+            ctx.say("You cannot kick this user. They have an equal or higher role than you.")
                 .await?;
             return Ok(());
         }
 
         if target_highest >= bot_highest {
-            ctx.say("Cannot kick this user - they have equal or higher role than me")
+            ctx.say("I cannot kick this user. They have an equal or higher role than me.")
                 .await?;
             return Ok(());
         }
     } else {
-        ctx.say("User is not in this server").await?;
+        ctx.say("That user is not in this server.").await?;
         return Ok(());
     }
 
@@ -76,19 +77,22 @@ pub async fn kick(
             info!(
                 "KICK performed by {} on user {} (ID: {}). Reason: {}",
                 ctx.author().name,
-                user.name,
+                user.tag(),
                 user.id,
                 kick_reason
             );
 
             ctx.say(format!(
-                "**Kicked** {} ({})\n**Reason:** {}",
-                user.name, user.id, kick_reason
+                "**Kicked** **{}** ({}).\n**Reason:** {}",
+                user.tag(),
+                user.id,
+                kick_reason
             ))
             .await?;
         }
         Err(e) => {
-            ctx.say(format!("Failed to kick {}: {}", user.name, e))
+            tracing::warn!("Failed to kick {}: {}", user.tag(), e);
+            ctx.say(format!("Failed to kick **{}**.", user.tag()))
                 .await?;
         }
     }

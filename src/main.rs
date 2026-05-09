@@ -63,7 +63,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     match error {
         poise::FrameworkError::Command { error, ctx, .. } => {
             error!("Command '{}' failed: {}", ctx.command().name, error);
-            let _ = ctx.say(format!("An error occurred: {}", error)).await;
+            let _ = ctx.say("An internal error occurred.").await;
         }
         poise::FrameworkError::MissingBotPermissions {
             missing_permissions,
@@ -77,7 +77,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
             );
             let _ = ctx
                 .say(format!(
-                    "I'm missing permissions: **{}**",
+                    "I'm missing the following permissions: **{}**.",
                     missing_permissions
                 ))
                 .await;
@@ -91,13 +91,18 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
             let _ = ctx
-                .say(format!("You're missing permissions: **{}**", perms))
+                .say(format!(
+                    "You're missing the following permissions: **{}**.",
+                    perms
+                ))
                 .await;
         }
         poise::FrameworkError::CommandCheckFailed { error, ctx, .. } => {
             if let Some(error) = error {
                 error!("Check failed for '{}': {}", ctx.command().name, error);
-                let _ = ctx.say(format!("Check failed: {}", error)).await;
+                let _ = ctx
+                    .say("You don't have permission to run this command.")
+                    .await;
             }
         }
         other => {
@@ -108,11 +113,51 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
+/// Show help for all commands or a specific command
+#[poise::command(slash_command, prefix_command)]
+async fn help(
+    ctx: Context<'_>,
+    #[description = "Specific command to show help for"] command: Option<String>,
+) -> Result<(), Error> {
+    let commands = &ctx.framework().options().commands;
+
+    if let Some(name) = command {
+        let target = name.trim().trim_start_matches('/');
+        if let Some(cmd) = commands.iter().find(|c| c.name == target) {
+            let desc = cmd.description.as_deref().unwrap_or("(no description)");
+            let mut body = format!("**/{}** — {}", cmd.name, desc);
+            if !cmd.subcommands.is_empty() {
+                body.push_str("\n\n**Subcommands:**");
+                for sub in &cmd.subcommands {
+                    let sub_desc = sub.description.as_deref().unwrap_or("");
+                    body.push_str(&format!("\n- `/{} {}` — {}", cmd.name, sub.name, sub_desc));
+                }
+            }
+            ctx.say(body).await?;
+        } else {
+            ctx.say(format!("Command `{}` not found.", target)).await?;
+        }
+        return Ok(());
+    }
+
+    let mut lines = vec!["**Commands:**".to_string()];
+    for cmd in commands {
+        if cmd.hide_in_help {
+            continue;
+        }
+        let desc = cmd.description.as_deref().unwrap_or("");
+        lines.push(format!("- `/{}` — {}", cmd.name, desc));
+    }
+    lines.push("\nUse `/help <command>` for details on a specific command.".to_string());
+    ctx.say(lines.join("\n")).await?;
+    Ok(())
+}
+
 #[poise::command(prefix_command, owners_only)]
 async fn register_commands(ctx: Context<'_>) -> Result<(), Error> {
     let commands = &ctx.framework().options().commands;
     poise::builtins::register_globally(ctx.http(), commands).await?;
-    ctx.say("Commands registered globally").await?;
+    ctx.say("Commands registered globally.").await?;
     Ok(())
 }
 
@@ -149,6 +194,7 @@ async fn main() -> Result<(), Error> {
     };
 
     let mut all_commands = commands::all_commands();
+    all_commands.push(help());
     all_commands.push(register_commands());
 
     let options = poise::FrameworkOptions {

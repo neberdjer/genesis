@@ -4,12 +4,13 @@ use tracing::info;
 
 use super::check_owner;
 
+/// Owner-only: make the bot leave a server by ID
 #[poise::command(slash_command, prefix_command, check = "check_owner")]
 pub async fn leave_server(
     ctx: Context<'_>,
     #[description = "Server ID to leave"] guild_id: String,
 ) -> Result<(), Error> {
-    let guild_id_parsed = guild_id.parse::<u64>().map_err(|_| "Invalid server ID")?;
+    let guild_id_parsed = guild_id.parse::<u64>().map_err(|_| "Invalid server ID.")?;
     let guild_id_obj = serenity::GuildId::new(guild_id_parsed);
 
     match ctx.serenity_context().http.get_guild(guild_id_obj).await {
@@ -24,14 +25,11 @@ pub async fn leave_server(
                 ctx.author().name
             );
 
-            ctx.say(format!(
-                "Successfully left server **{}** ({})",
-                guild_name, guild_id
-            ))
-            .await?;
+            ctx.say(format!("Left server **{}** ({}).", guild_name, guild_id))
+                .await?;
         }
         Err(_) => {
-            ctx.say(format!("Failed to find server with ID **{}**", guild_id))
+            ctx.say(format!("Failed to find server with ID **{}**.", guild_id))
                 .await?;
         }
     }

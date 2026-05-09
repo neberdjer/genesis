@@ -64,9 +64,10 @@ pub async fn build_container(
     if let Some(quote_author) = &post.quote_author
         && let (Some(quote_username), Some(quote_text)) = (&post.quote_username, &post.quote_text)
     {
+        let quoted_lines = quote_text.replace('\n', "\n> ");
         content.push_str(&format!(
             "\n\n> **{}** (@{})\n> {}",
-            quote_author, quote_username, quote_text
+            quote_author, quote_username, quoted_lines
         ));
     }
 
@@ -77,7 +78,7 @@ pub async fn build_container(
 
     let mut attachments = Vec::new();
     let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
-    for (i, media_url) in post.media.iter().enumerate() {
+    for (i, media_url) in post.media.iter().take(10).enumerate() {
         let filename = media_filename(i, media_url);
         if let Some(data) = shared::download_media(media_url, TWITTER_DOWNLOAD_UA).await {
             let attachment_url = format!("attachment://{}", filename);

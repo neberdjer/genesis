@@ -18,16 +18,16 @@ pub async fn ban(
 ) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()
-        .ok_or("This command can only be used in a server")?;
+        .ok_or("This command can only be used in a server.")?;
     let http = ctx.http();
 
     if user.id == ctx.author().id {
-        ctx.say("You cannot ban yourself").await?;
+        ctx.say("You cannot ban yourself.").await?;
         return Ok(());
     }
 
     if user.id == ctx.framework().bot_id() {
-        ctx.say("You cannot ban me").await?;
+        ctx.say("You cannot ban me.").await?;
         return Ok(());
     }
 
@@ -38,7 +38,7 @@ pub async fn ban(
 
             let guild = guild_id.to_partial_guild(ctx).await?;
             if target_member.user.id == guild.owner_id {
-                ctx.say("Cannot ban the server owner").await?;
+                ctx.say("You cannot ban the server owner.").await?;
                 return Ok(());
             }
 
@@ -47,13 +47,13 @@ pub async fn ban(
             let bot_highest = super::get_highest_role(ctx, guild_id, &bot_member);
 
             if target_highest >= author_highest {
-                ctx.say("Cannot ban this user - they have equal or higher role than you")
+                ctx.say("You cannot ban this user. They have an equal or higher role than you.")
                     .await?;
                 return Ok(());
             }
 
             if target_highest >= bot_highest {
-                ctx.say("Cannot ban this user - they have equal or higher role than me")
+                ctx.say("I cannot ban this user. They have an equal or higher role than me.")
                     .await?;
                 return Ok(());
             }
@@ -64,7 +64,7 @@ pub async fn ban(
 
     let delete_days = delete_days.unwrap_or(0);
     if delete_days > 7 {
-        ctx.say("Delete days must be between 0 and 7").await?;
+        ctx.say("Delete days must be between 0 and 7.").await?;
         return Ok(());
     }
 
@@ -73,10 +73,10 @@ pub async fn ban(
 
     if !is_member && let Ok(Some(_)) = http.get_ban(guild_id, user.id).await {
         if is_softban {
-            ctx.say("User is already banned, cannot perform softban")
+            ctx.say("That user is already banned. Softban cannot be performed.")
                 .await?;
         } else {
-            ctx.say("User is already banned").await?;
+            ctx.say("That user is already banned.").await?;
         }
         return Ok(());
     }
@@ -92,40 +92,55 @@ pub async fn ban(
                 "{} performed by {} on user {} (ID: {}). Reason: {}. Delete days: {}",
                 action_type.to_uppercase(),
                 ctx.author().name,
-                user.name,
+                user.tag(),
                 user.id,
                 ban_reason,
                 delete_days
             );
 
+            let day_word = if delete_days == 1 { "day" } else { "days" };
+
             if is_softban {
                 match guild_id.unban(http, user.id, Some("Softban")).await {
                     Ok(_) => {
                         ctx.say(format!(
-                            "**Softbanned** {} ({})\n**Reason:** {}\n**Messages deleted:** {} days",
-                            user.name, user.id, ban_reason, delete_days
+                            "**Softbanned** **{}** ({}).\n**Reason:** {}\n**Messages deleted:** {} {}",
+                            user.tag(),
+                            user.id,
+                            ban_reason,
+                            delete_days,
+                            day_word
                         ))
                         .await?;
 
-                        info!("Softban completed - user {} has been unbanned", user.name);
+                        info!("Softban completed - user {} has been unbanned", user.tag());
                     }
                     Err(e) => {
+                        tracing::warn!("Softban unban failed for {}: {}", user.tag(), e);
                         ctx.say(format!(
-                            "**Banned** {} ({}) but failed to unban for softban: {}\n**Reason:** {}",
-                            user.name, user.id, e, ban_reason
-                        )).await?;
+                            "**Banned** **{}** ({}), but the unban step of softban failed.\n**Reason:** {}",
+                            user.tag(),
+                            user.id,
+                            ban_reason
+                        ))
+                        .await?;
                     }
                 }
             } else {
                 ctx.say(format!(
-                    "**Banned** {} ({})\n**Reason:** {}\n**Messages deleted:** {} days",
-                    user.name, user.id, ban_reason, delete_days
+                    "**Banned** **{}** ({}).\n**Reason:** {}\n**Messages deleted:** {} {}",
+                    user.tag(),
+                    user.id,
+                    ban_reason,
+                    delete_days,
+                    day_word
                 ))
                 .await?;
             }
         }
         Err(e) => {
-            ctx.say(format!("Failed to ban {}: {}", user.name, e))
+            tracing::warn!("Failed to ban {}: {}", user.tag(), e);
+            ctx.say(format!("Failed to ban **{}**.", user.tag()))
                 .await?;
         }
     }

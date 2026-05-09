@@ -14,6 +14,7 @@ async fn deny(ctx: Context<'_>, message: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// Fetch and post an Instagram link (post, reel, IGTV, photo carousel)
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
@@ -44,9 +45,10 @@ pub async fn instagram(
     let post = match shared::spawn_blocking_fetch(move || InstagramPost::fetch(&url_owned)).await {
         Ok(post) => post,
         Err(e) => {
+            tracing::warn!("Failed to fetch Instagram post via slash command: {}", e);
             ctx.send(
                 CreateReply::default()
-                    .content(format!("Failed to fetch Instagram post: {}", e))
+                    .content("Failed to fetch the Instagram post.")
                     .ephemeral(true),
             )
             .await?;
@@ -67,6 +69,7 @@ pub async fn instagram(
     Ok(())
 }
 
+/// Fetch and post a tweet (text, photos, videos, quote tweets)
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
@@ -97,9 +100,10 @@ pub async fn twitter(
     let post = match shared::spawn_blocking_fetch(move || TwitterPost::fetch(&url_owned)).await {
         Ok(post) => post,
         Err(e) => {
+            tracing::warn!("Failed to fetch tweet via slash command: {}", e);
             ctx.send(
                 CreateReply::default()
-                    .content(format!("Failed to fetch tweet: {}", e))
+                    .content("Failed to fetch the tweet.")
                     .ephemeral(true),
             )
             .await?;
@@ -120,6 +124,7 @@ pub async fn twitter(
     Ok(())
 }
 
+/// Fetch and post a TikTok video or photo slideshow
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
@@ -150,9 +155,10 @@ pub async fn tiktok(
     let post = match shared::spawn_blocking_fetch(move || TikTokPost::fetch(&resolved_url)).await {
         Ok(post) => post,
         Err(e) => {
+            tracing::warn!("Failed to fetch TikTok via slash command: {}", e);
             ctx.send(
                 CreateReply::default()
-                    .content(format!("Failed to fetch TikTok: {}", e))
+                    .content("Failed to fetch the TikTok post.")
                     .ephemeral(true),
             )
             .await?;

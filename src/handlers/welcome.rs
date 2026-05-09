@@ -105,6 +105,10 @@ pub async fn handle_member_join(
         .map(|g| g.member_count.to_string())
         .unwrap_or_else(|| "?".to_string());
 
+    if settings.message.trim().is_empty() {
+        return;
+    }
+
     let message = settings
         .message
         .replace("{server_name}", &guild_name)

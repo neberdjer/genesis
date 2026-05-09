@@ -49,7 +49,17 @@ pub async fn build_container(
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let mut content = format!("**{}** (@{})", post.author, post.username);
+    let mut content = if post.username.is_empty() {
+        if post.author.is_empty() {
+            "**Instagram**".to_string()
+        } else {
+            format!("**{}**", post.author)
+        }
+    } else if post.author.is_empty() || post.author == post.username {
+        format!("**@{}**", post.username)
+    } else {
+        format!("**{}** (@{})", post.author, post.username)
+    };
     if !post.text.is_empty() {
         content.push_str(&format!("\n{}", post.text));
     }
@@ -61,7 +71,7 @@ pub async fn build_container(
 
     let mut attachments = Vec::new();
     let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
-    for (i, media_url) in post.media.iter().enumerate() {
+    for (i, media_url) in post.media.iter().take(10).enumerate() {
         let filename = media_filename(i, media_url);
         if let Some(data) = shared::download_media(media_url, ua_for_media_url(media_url)).await {
             let attachment_url = format!("attachment://{}", filename);

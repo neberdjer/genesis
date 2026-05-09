@@ -2,6 +2,7 @@ use crate::{Context, Error, db};
 use poise::serenity_prelude::EditMessage;
 use tracing::info;
 
+/// Check the bot's response time
 #[poise::command(slash_command, prefix_command)]
 pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     let start = std::time::Instant::now();
@@ -29,6 +30,7 @@ pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
+/// Show bot stats: servers, users, uptime, version
 #[poise::command(slash_command, prefix_command)]
 pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
     let pool = &ctx.data().pool;

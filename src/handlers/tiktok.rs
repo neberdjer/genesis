@@ -61,7 +61,7 @@ pub async fn build_container(
 
     let mut attachments = Vec::new();
     let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
-    for (i, media_url) in post.media.iter().enumerate() {
+    for (i, media_url) in post.media.iter().take(10).enumerate() {
         let filename = media_filename(i, media_url);
         if let Some(data) = shared::download_media(media_url, TIKTOK_DOWNLOAD_UA).await {
             let attachment_url = format!("attachment://{}", filename);
