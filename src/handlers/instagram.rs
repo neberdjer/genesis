@@ -125,6 +125,10 @@ pub async fn handle_instagram_links(
                     "message_reference": {
                         "message_id": msg.id.to_string()
                     },
+                    "allowed_mentions": {
+                        "parse": [],
+                        "replied_user": false
+                    },
                     "flags": 1 << 15
                 });
 
