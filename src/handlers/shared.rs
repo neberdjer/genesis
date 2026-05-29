@@ -1,4 +1,4 @@
-use crate::constants::EMBED_SUPPRESS_DELAY_MS;
+use crate::constants::{EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS};
 use crate::db;
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
@@ -36,23 +36,38 @@ pub fn check_rate_limit(user_id: serenity::UserId, handler: &'static str) -> boo
     true
 }
 
+async fn fire_flags_only_suppress(
+    ctx: &serenity::Context,
+    msg: &serenity::Message,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use serenity::http::{LightMethod, Request, Route};
+
+    let request = Request::new(
+        Route::ChannelMessage {
+            channel_id: msg.channel_id,
+            message_id: msg.id,
+        },
+        LightMethod::Patch,
+    )
+    .body(Some(br#"{"flags":4}"#.to_vec()));
+
+    ctx.http.request(request).await?;
+    Ok(())
+}
+
 pub async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
     tokio::time::sleep(Duration::from_millis(EMBED_SUPPRESS_DELAY_MS)).await;
 
-    if let Err(e) = msg
-        .channel_id
-        .edit_message(
-            &ctx.http,
-            msg.id,
-            serenity::EditMessage::new().suppress_embeds(true),
-        )
-        .await
-    {
+    if let Err(e) = fire_flags_only_suppress(ctx, msg).await {
         warn!(
             "Failed to suppress embed in channel {} (needs Manage Messages permission): {}",
             msg.channel_id, e
         );
+        return;
     }
+
+    tokio::time::sleep(Duration::from_millis(EMBED_SUPPRESS_RETRY_DELAY_MS)).await;
+    let _ = fire_flags_only_suppress(ctx, msg).await;
 }
 
 pub async fn download_media(url: &str, user_agent: &str) -> Option<Vec<u8>> {

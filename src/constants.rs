@@ -1,4 +1,5 @@
 pub const EMBED_SUPPRESS_DELAY_MS: u64 = 500;
+pub const EMBED_SUPPRESS_RETRY_DELAY_MS: u64 = 3000;
 pub const DISCORD_MESSAGE_LIMIT: usize = 2000;
 pub const TRUNCATED_MESSAGE_LIMIT: usize = 1950;
 pub const DEFAULT_PREFIX: &str = "!";
