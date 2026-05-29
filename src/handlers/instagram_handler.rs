@@ -50,7 +50,7 @@ impl InstagramPost {
 
     fn fetch_by_id(post_id: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         if let Some(post) = Self::fetch_graphql_simple(post_id) {
-            return Ok(post);
+            return Ok(Self::finalize(post));
         }
         debug!(
             "Simple GraphQL failed for {}, trying authed GraphQL",
@@ -58,20 +58,27 @@ impl InstagramPost {
         );
 
         if let Some(post) = Self::fetch_graphql_authed(post_id) {
-            return Ok(post);
+            return Ok(Self::finalize(post));
         }
         debug!("Authed GraphQL failed for {}, trying mobile API", post_id);
 
         if let Some(post) = Self::fetch_mobile_api(post_id) {
-            return Ok(post);
+            return Ok(Self::finalize(post));
         }
         debug!("Mobile API failed for {}, trying mirror fallback", post_id);
 
         if let Some(post) = Self::fetch_mirror(post_id) {
-            return Ok(post);
+            return Ok(Self::finalize(post));
         }
 
         Err("All Instagram fetch methods failed".into())
+    }
+
+    fn finalize(mut self) -> Self {
+        let mut seen = std::collections::HashSet::new();
+        self.media
+            .retain(|u| seen.insert(u.split('?').next().unwrap_or(u).to_string()));
+        self
     }
 
     fn fetch_graphql_simple(post_id: &str) -> Option<Self> {
