@@ -57,7 +57,7 @@ pub async fn instagram(
         }
     };
 
-    let (attachments, container) = instagram::build_container(&post).await;
+    let (attachments, container) = instagram::build_container(&post, ctx.author().id).await;
     let mut reply = CreateReply::default()
         .components(vec![serenity::CreateComponent::Container(container)])
         .flags(serenity::MessageFlags::IS_COMPONENTS_V2)
@@ -112,7 +112,7 @@ pub async fn twitter(
         }
     };
 
-    let (attachments, container) = twitter::build_container(&post).await;
+    let (attachments, container) = twitter::build_container(&post, ctx.author().id).await;
     let mut reply = CreateReply::default()
         .components(vec![serenity::CreateComponent::Container(container)])
         .flags(serenity::MessageFlags::IS_COMPONENTS_V2)
@@ -167,7 +167,7 @@ pub async fn tiktok(
         }
     };
 
-    let (attachments, container) = tiktok::build_container(&post).await;
+    let (attachments, container) = tiktok::build_container(&post, ctx.author().id).await;
     let mut reply = CreateReply::default()
         .components(vec![serenity::CreateComponent::Container(container)])
         .flags(serenity::MessageFlags::IS_COMPONENTS_V2)
@@ -222,7 +222,7 @@ pub async fn reddit(
         }
     };
 
-    let (attachments, container) = reddit::build_container(&post).await;
+    let (attachments, container) = reddit::build_container(&post, ctx.author().id).await;
     let mut reply = CreateReply::default()
         .components(vec![serenity::CreateComponent::Container(container)])
         .flags(serenity::MessageFlags::IS_COMPONENTS_V2)

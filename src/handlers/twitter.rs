@@ -47,6 +47,7 @@ fn media_filename(index: usize, url: &str) -> String {
 
 pub async fn build_container(
     post: &TwitterPost,
+    user_id: serenity::UserId,
 ) -> (
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
@@ -97,6 +98,10 @@ pub async fn build_container(
         ));
     }
 
+    components.push(serenity::CreateContainerComponent::TextDisplay(
+        serenity::CreateTextDisplay::new(format!("-# Sent by <@{}>", user_id)),
+    ));
+
     let container = serenity::CreateContainer::new(components).accent_color(TWITTER_ACCENT_COLOR);
     (attachments, container)
 }
@@ -143,7 +148,7 @@ pub async fn handle_twitter_links(
         let url_owned = url.clone();
         match shared::spawn_blocking_fetch(move || TwitterPost::fetch(&url_owned)).await {
             Ok(post) => {
-                let (attachments, container) = build_container(&post).await;
+                let (attachments, container) = build_container(&post, msg.author.id).await;
                 let message = serenity::CreateMessage::new()
                     .components(vec![serenity::CreateComponent::Container(container)])
                     .flags(serenity::MessageFlags::IS_COMPONENTS_V2)
