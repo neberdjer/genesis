@@ -18,14 +18,15 @@ fn clean_url(url: &str) -> &str {
 }
 
 async fn send_code_snippet(ctx: &serenity::Context, msg: &serenity::Message, response: String) {
-    let content = if response.len() <= DISCORD_MESSAGE_LIMIT {
+    let footer = format!("\n-# Sent by <@{}>", msg.author.id);
+    let max_body = DISCORD_MESSAGE_LIMIT - footer.len();
+    let body = if response.len() <= max_body {
         response
     } else {
-        format!(
-            "{}...\n```\n(Content too long)",
-            &response[..TRUNCATED_MESSAGE_LIMIT]
-        )
+        let truncate_at = TRUNCATED_MESSAGE_LIMIT.min(max_body.saturating_sub(30));
+        format!("{}...\n```\n(Content too long)", &response[..truncate_at])
     };
+    let content = format!("{}{}", body, footer);
 
     if let Err(e) = msg
         .channel_id

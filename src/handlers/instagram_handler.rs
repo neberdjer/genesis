@@ -1,6 +1,6 @@
 use crate::constants::{
-    INSTAGRAM_APP_ID, INSTAGRAM_DESKTOP_UA, INSTAGRAM_DOC_IDS, INSTAGRAM_MAX_CAROUSEL_SLIDES,
-    INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS, INSTAGRAM_MOBILE_UA,
+    INSTAGRAM_APP_ID, INSTAGRAM_DESKTOP_UA, INSTAGRAM_DOC_IDS, INSTAGRAM_EMBED_UA,
+    INSTAGRAM_MAX_CAROUSEL_SLIDES, INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS, INSTAGRAM_MOBILE_UA,
 };
 use regex::Regex;
 use serde_json::Value;
@@ -49,6 +49,14 @@ impl InstagramPost {
     }
 
     fn fetch_by_id(post_id: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        if let Some(post) = Self::fetch_embed_captioned(post_id) {
+            return Ok(Self::finalize(post));
+        }
+        debug!(
+            "Embed captioned failed for {}, trying simple GraphQL",
+            post_id
+        );
+
         if let Some(post) = Self::fetch_graphql_simple(post_id) {
             return Ok(Self::finalize(post));
         }
@@ -72,6 +80,69 @@ impl InstagramPost {
         }
 
         Err("All Instagram fetch methods failed".into())
+    }
+
+    fn fetch_embed_captioned(post_id: &str) -> Option<Self> {
+        let url = format!("https://www.instagram.com/p/{}/embed/captioned/", post_id);
+
+        let response = ureq::get(&url)
+            .set("User-Agent", INSTAGRAM_EMBED_UA)
+            .set(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
+            .set("Accept-Language", "en-US,en;q=0.9")
+            .timeout(Duration::from_secs(15))
+            .call()
+            .ok()?;
+
+        let mut html = String::new();
+        use std::io::Read as _;
+        response
+            .into_reader()
+            .take(4 * 1024 * 1024)
+            .read_to_string(&mut html)
+            .ok()?;
+
+        let escaped_object = Self::extract_escaped_brace_value(&html, r#"\"gql_data\":"#)?;
+        let unescaped: String = serde_json::from_str(&format!("\"{}\"", escaped_object)).ok()?;
+        let data: Value = serde_json::from_str(&unescaped).ok()?;
+        let item = data
+            .get("shortcode_media")
+            .or_else(|| data.get("xdt_shortcode_media"))?;
+
+        Self::parse_media_item(item).ok()
+    }
+
+    fn extract_escaped_brace_value(haystack: &str, needle: &str) -> Option<String> {
+        let start = haystack.find(needle)? + needle.len();
+        let rest = haystack.get(start..)?;
+        let bytes = rest.as_bytes();
+        let open = bytes.iter().position(|&b| b == b'{')?;
+        let mut depth = 0i32;
+        let mut in_string = false;
+        let mut i = open;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+            if b == b'"' {
+                in_string = !in_string;
+            } else if !in_string {
+                if b == b'{' {
+                    depth += 1;
+                } else if b == b'}' {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(rest[open..=i].to_string());
+                    }
+                }
+            }
+            i += 1;
+        }
+        None
     }
 
     fn finalize(mut self) -> Self {
@@ -344,8 +415,10 @@ impl InstagramPost {
                 }
             }
 
-            let slide_url =
-                Self::capture_first(vid_re, &html).or_else(|| Self::capture_first(img_re, &html));
+            let video_url = Self::capture_first(vid_re, &html);
+            let slide_url = video_url
+                .clone()
+                .or_else(|| Self::capture_first(img_re, &html));
 
             let Some(slide) = slide_url else {
                 break;
@@ -357,6 +430,10 @@ impl InstagramPost {
             }
             last_media_url = Some(slide.clone());
             media.push(slide);
+
+            if video_url.is_some() {
+                break;
+            }
         }
 
         if media.is_empty() {

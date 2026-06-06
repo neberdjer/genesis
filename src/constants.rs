@@ -13,6 +13,7 @@ pub const MAX_FILE_CHARS: usize = 1700;
 
 pub const INSTAGRAM_DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 pub const INSTAGRAM_MOBILE_UA: &str = "Instagram 275.0.0.27.98 Android (33/13; 420dpi; 1080x2400; samsung; SM-G991B; o1s; exynos2100)";
+pub const INSTAGRAM_EMBED_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 pub const INSTAGRAM_MIRROR_UA: &str = "TelegramBot (like TwitterBot)";
 pub const INSTAGRAM_APP_ID: &str = "936619743392459";
 pub const INSTAGRAM_DOC_IDS: &[&str] = &["8845758582119845", "25981206651899035"];

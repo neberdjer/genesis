@@ -102,6 +102,14 @@ pub fn clean_url(url: &str) -> &str {
         .trim_end_matches([',', ')', ']', '}', ';'])
 }
 
+fn extract_sent_by_footer(content: &str) -> Option<String> {
+    let marker = "\n-# Sent by <@";
+    let start = content.rfind(marker)?;
+    let rest = &content[start..];
+    let end = rest.find('>')?;
+    Some(rest[..=end].to_string())
+}
+
 fn create_pagination_buttons(
     current_page: usize,
     total_pages: usize,
@@ -171,15 +179,17 @@ async fn send_paginated_diff(
     }
 
     let total_pages = responses.len();
+    let footer = format!("\n-# Sent by <@{}>", msg.author.id);
     let first_page = &responses[0];
 
-    if first_page.len() > DISCORD_MESSAGE_LIMIT {
+    if first_page.len() + footer.len() > DISCORD_MESSAGE_LIMIT {
         warn!("Diff response too long, skipping");
         return false;
     }
 
+    let content = format!("{}{}", first_page, footer);
     let mut message_builder = serenity::CreateMessage::new()
-        .content(first_page)
+        .content(content)
         .reference_message(msg)
         .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
 
@@ -492,9 +502,15 @@ pub async fn handle_diff_pagination(
 
     let buttons = create_pagination_buttons(new_page, total_pages, &commit);
 
+    let footer = extract_sent_by_footer(&interaction.message.content);
+    let content = match footer {
+        Some(f) => format!("{}{}", page_content, f),
+        None => page_content.to_string(),
+    };
+
     let response = serenity::CreateInteractionResponse::UpdateMessage(
         serenity::CreateInteractionResponseMessage::new()
-            .content(page_content)
+            .content(content)
             .components(vec![serenity::CreateComponent::ActionRow(buttons)]),
     );
 
