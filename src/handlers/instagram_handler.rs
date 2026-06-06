@@ -76,9 +76,25 @@ impl InstagramPost {
 
     fn finalize(mut self) -> Self {
         let mut seen = std::collections::HashSet::new();
-        self.media
-            .retain(|u| seen.insert(u.split('?').next().unwrap_or(u).to_string()));
+        self.media.retain(|u| seen.insert(Self::media_key(u)));
         self
+    }
+
+    fn media_key(url: &str) -> String {
+        let no_query = url.split('?').next().unwrap_or(url);
+        if let Some((_, after_scheme)) = no_query.split_once("://")
+            && let Some(path_start) = after_scheme.find('/')
+        {
+            return after_scheme[path_start..].to_string();
+        }
+        no_query.to_string()
+    }
+
+    fn is_mirror_brand(candidate: &str) -> bool {
+        let lower = candidate.to_ascii_lowercase();
+        INSTAGRAM_MIRRORS
+            .iter()
+            .any(|m| m.split('.').next().is_some_and(|brand| brand == lower))
     }
 
     fn fetch_graphql_simple(post_id: &str) -> Option<Self> {
@@ -313,12 +329,15 @@ impl InstagramPost {
 
             if n == 1 {
                 if let Some(t) = Self::capture_first(title_re, &html) {
-                    username = Self::html_unescape(&t)
+                    let candidate = Self::html_unescape(&t)
                         .trim_start_matches('@')
                         .split(" (")
                         .next()
                         .unwrap_or("")
                         .to_string();
+                    if !Self::is_mirror_brand(&candidate) {
+                        username = candidate;
+                    }
                 }
                 if let Some(d) = Self::capture_first(desc_re, &html) {
                     caption = Self::html_unescape(&d);

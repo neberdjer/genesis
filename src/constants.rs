@@ -17,7 +17,6 @@ pub const INSTAGRAM_MIRROR_UA: &str = "TelegramBot (like TwitterBot)";
 pub const INSTAGRAM_APP_ID: &str = "936619743392459";
 pub const INSTAGRAM_DOC_IDS: &[&str] = &["8845758582119845", "25981206651899035"];
 pub const INSTAGRAM_MIRRORS: &[&str] = &[
-    "ddinstagram.com",
     "kkinstagram.com",
     "vxinstagram.com",
     "eeinstagram.com",
