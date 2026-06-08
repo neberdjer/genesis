@@ -1,4 +1,5 @@
 pub mod general;
+pub mod git;
 pub mod media;
 pub mod moderation;
 pub mod settings;
@@ -15,6 +16,7 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
         media::twitter(),
         media::tiktok(),
         media::reddit(),
+        git::git(),
         settings::settings(),
         welcome::welcome(),
     ];

@@ -1,5 +1,5 @@
-mod git_diff_handler;
-mod git_handler;
+pub(crate) mod git_diff_handler;
+pub(crate) mod git_handler;
 pub(crate) mod instagram_handler;
 pub(crate) mod reddit_handler;
 pub(crate) mod shared;

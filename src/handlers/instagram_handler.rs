@@ -118,19 +118,25 @@ impl InstagramPost {
         let start = haystack.find(needle)? + needle.len();
         let rest = haystack.get(start..)?;
         let bytes = rest.as_bytes();
-        let open = bytes.iter().position(|&b| b == b'{')?;
+        let open = bytes
+            .iter()
+            .position(|&b| !matches!(b, b' ' | b'\t' | b'\n' | b'\r'))?;
+        if bytes[open] != b'{' {
+            return None;
+        }
         let mut depth = 0i32;
         let mut in_string = false;
         let mut i = open;
         while i < bytes.len() {
             let b = bytes[i];
             if b == b'\\' && i + 1 < bytes.len() {
+                if bytes[i + 1] == b'"' {
+                    in_string = !in_string;
+                }
                 i += 2;
                 continue;
             }
-            if b == b'"' {
-                in_string = !in_string;
-            } else if !in_string {
+            if !in_string {
                 if b == b'{' {
                     depth += 1;
                 } else if b == b'}' {

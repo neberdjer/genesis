@@ -110,7 +110,7 @@ fn extract_sent_by_footer(content: &str) -> Option<String> {
     Some(rest[..=end].to_string())
 }
 
-fn create_pagination_buttons(
+pub fn create_pagination_buttons(
     current_page: usize,
     total_pages: usize,
     commit: &CommitDiff,
@@ -325,18 +325,11 @@ async fn handle_commit_diffs_impl(
 
     let mut any_sent = false;
     for commit in found_commits {
-        let chunked = if let Some(cached) = get_cached_responses(&commit) {
-            cached
-        } else {
-            match fetch_and_chunk(&commit).await {
-                Ok(chunked) => {
-                    cache_responses(&commit, chunked.clone());
-                    chunked
-                }
-                Err(e) => {
-                    warn!("Failed to fetch commit diff: {}", e);
-                    continue;
-                }
+        let chunked = match fetch_or_cached(&commit).await {
+            Ok(chunked) => chunked,
+            Err(e) => {
+                warn!("Failed to fetch commit diff: {}", e);
+                continue;
             }
         };
 
@@ -348,6 +341,17 @@ async fn handle_commit_diffs_impl(
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
     }
+}
+
+pub async fn fetch_or_cached(
+    commit: &CommitDiff,
+) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    if let Some(cached) = get_cached_responses(commit) {
+        return Ok(cached);
+    }
+    let chunked = fetch_and_chunk(commit).await?;
+    cache_responses(commit, chunked.clone());
+    Ok(chunked)
 }
 
 async fn fetch_and_chunk(
@@ -478,18 +482,11 @@ pub async fn handle_diff_pagination(
         is_compare,
     };
 
-    let chunked = if let Some(cached) = get_cached_responses(&commit) {
-        cached
-    } else {
-        match fetch_and_chunk(&commit).await {
-            Ok(chunked) => {
-                cache_responses(&commit, chunked.clone());
-                chunked
-            }
-            Err(e) => {
-                warn!("Failed to fetch commit diff for pagination: {}", e);
-                return;
-            }
+    let chunked = match fetch_or_cached(&commit).await {
+        Ok(chunked) => chunked,
+        Err(e) => {
+            warn!("Failed to fetch commit diff for pagination: {}", e);
+            return;
         }
     };
 
