@@ -114,6 +114,7 @@ pub fn create_pagination_buttons(
     current_page: usize,
     total_pages: usize,
     commit: &CommitDiff,
+    lock_user_id: Option<u64>,
 ) -> serenity::CreateActionRow<'_> {
     let platform_prefix = match (commit.platform, commit.is_compare) {
         (super::git_diff_handler::GitPlatform::GitHub, false) => "gh",
@@ -128,8 +129,12 @@ pub fn create_pagination_buttons(
     let file_filter_part = commit.file_filter.as_deref().unwrap_or("");
     let file_separator = if file_filter_part.is_empty() { "" } else { "|" };
 
+    let lock_suffix = lock_user_id
+        .map(|id| format!(":{}", id))
+        .unwrap_or_default();
+
     let prev_button = serenity::CreateButton::new(format!(
-        "diff:prev:{}{}{}:{}:{}:{}{}{}_{}",
+        "diff:prev:{}{}{}:{}:{}:{}{}{}_{}{}",
         platform_prefix,
         separator,
         host_part,
@@ -138,7 +143,8 @@ pub fn create_pagination_buttons(
         commit.commit,
         file_separator,
         file_filter_part,
-        current_page
+        current_page,
+        lock_suffix
     ))
     .label("Previous")
     .style(serenity::ButtonStyle::Primary)
@@ -150,7 +156,7 @@ pub fn create_pagination_buttons(
         .disabled(true);
 
     let next_button = serenity::CreateButton::new(format!(
-        "diff:next:{}{}{}:{}:{}:{}{}{}_{}",
+        "diff:next:{}{}{}:{}:{}:{}{}{}_{}{}",
         platform_prefix,
         separator,
         host_part,
@@ -159,7 +165,8 @@ pub fn create_pagination_buttons(
         commit.commit,
         file_separator,
         file_filter_part,
-        current_page
+        current_page,
+        lock_suffix
     ))
     .label("Next")
     .style(serenity::ButtonStyle::Primary)
@@ -194,7 +201,7 @@ async fn send_paginated_diff(
         .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
 
     if total_pages > 1 {
-        let buttons = create_pagination_buttons(0, total_pages, commit);
+        let buttons = create_pagination_buttons(0, total_pages, commit, None);
         message_builder =
             message_builder.components(vec![serenity::CreateComponent::ActionRow(buttons)]);
     }
@@ -418,7 +425,23 @@ pub async fn handle_diff_pagination(
     let platform_and_host = colon_parts[0];
     let owner = colon_parts[1];
     let repo = colon_parts[2];
-    let commit_filter_page = colon_parts[3];
+
+    let (commit_filter_page, lock_user_id) = match colon_parts[3].rsplit_once(':') {
+        Some((cfp, uid)) if uid.parse::<u64>().is_ok() => (cfp, uid.parse::<u64>().ok()),
+        _ => (colon_parts[3], None),
+    };
+
+    if let Some(lock_uid) = lock_user_id
+        && interaction.user.id.get() != lock_uid
+    {
+        let response = serenity::CreateInteractionResponse::Message(
+            serenity::CreateInteractionResponseMessage::new()
+                .content("Only the original poster can navigate this diff.")
+                .ephemeral(true),
+        );
+        let _ = interaction.create_response(&ctx.http, response).await;
+        return;
+    }
 
     let (platform, is_compare, host) = if let Some(rest) = platform_and_host.strip_prefix("gh") {
         (
@@ -497,7 +520,7 @@ pub async fn handle_diff_pagination(
     let page_content = &chunked[new_page];
     let total_pages = chunked.len();
 
-    let buttons = create_pagination_buttons(new_page, total_pages, &commit);
+    let buttons = create_pagination_buttons(new_page, total_pages, &commit, lock_user_id);
 
     let footer = extract_sent_by_footer(&interaction.message.content);
     let content = match footer {

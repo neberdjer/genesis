@@ -14,6 +14,7 @@ async fn deny(ctx: Context<'_>, message: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// Fetch and post a git file snippet or commit diff (GitHub, GitLab, Gitea, rustdoc)
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
@@ -22,6 +23,9 @@ async fn deny(ctx: Context<'_>, message: &str) -> Result<(), Error> {
 pub async fn git(
     ctx: Context<'_>,
     #[description = "File URL, commit URL, or compare URL"] url: String,
+    #[description = "Restrict pagination buttons to only you (commit diffs only)"] only_me: Option<
+        bool,
+    >,
 ) -> Result<(), Error> {
     let data = ctx.data();
     let pool = Some(data.pool.as_ref());
@@ -32,7 +36,7 @@ pub async fn git(
     let trimmed = url.trim();
 
     if let Some(commit) = CommitDiff::parse(trimmed) {
-        return send_diff(ctx, commit).await;
+        return send_diff(ctx, commit, only_me.unwrap_or(false)).await;
     }
 
     if let Some(link) = GitFileLink::parse(trimmed) {
@@ -86,7 +90,7 @@ async fn send_file(ctx: Context<'_>, link: GitFileLink) -> Result<(), Error> {
     Ok(())
 }
 
-async fn send_diff(ctx: Context<'_>, commit: CommitDiff) -> Result<(), Error> {
+async fn send_diff(ctx: Context<'_>, commit: CommitDiff, only_me: bool) -> Result<(), Error> {
     if !shared::check_rate_limit(ctx.author().id, "git_diffs") {
         return deny(
             ctx,
@@ -121,7 +125,8 @@ async fn send_diff(ctx: Context<'_>, commit: CommitDiff) -> Result<(), Error> {
         .allowed_mentions(serenity::CreateAllowedMentions::new());
 
     if total_pages > 1 {
-        let buttons = git_diffs::create_pagination_buttons(0, total_pages, &commit);
+        let lock = only_me.then(|| ctx.author().id.get());
+        let buttons = git_diffs::create_pagination_buttons(0, total_pages, &commit, lock);
         reply = reply.components(vec![serenity::CreateComponent::ActionRow(buttons)]);
     }
 
