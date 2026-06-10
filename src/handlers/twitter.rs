@@ -7,6 +7,18 @@ use tracing::{debug, warn};
 
 const TWITTER_ACCENT_COLOR: u32 = 0x1DA1F2;
 
+const TWITTER_HOSTS: &[&str] = &[
+    "twitter.com",
+    "x.com",
+    "vxtwitter.com",
+    "fxtwitter.com",
+    "fixupx.com",
+    "xfixup.com",
+    "fixvx.com",
+    "twittpr.com",
+    "twitterez.com",
+];
+
 fn is_twitter_url(word: &str) -> bool {
     let lower = word.to_ascii_lowercase();
     if lower.contains("t.co/") {
@@ -18,11 +30,10 @@ fn is_twitter_url(word: &str) -> bool {
     };
     let after_scheme = &lower[scheme_end + 3..];
     let host = after_scheme.split('/').next().unwrap_or("");
-    let normalized = host
-        .trim_start_matches("www.")
-        .trim_start_matches("mobile.")
-        .trim_start_matches("m.");
-    if normalized != "twitter.com" && normalized != "x.com" {
+    let host_matches = TWITTER_HOSTS
+        .iter()
+        .any(|domain| host == *domain || host.ends_with(&format!(".{}", domain)));
+    if !host_matches {
         return false;
     }
 

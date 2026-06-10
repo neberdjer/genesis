@@ -266,7 +266,7 @@ impl TwitterPost {
     fn extract_tweet_id(url: &str) -> Option<String> {
         let pattern = TWITTER_PATTERN.get_or_init(|| {
             Regex::new(
-                r"(?i)https?://(?:[a-z0-9-]+\.)?(?:twitter|x)\.com/(?:i/web/|[^/?#]+/)?status/(\d+)",
+                r"(?i)https?://(?:[a-z0-9-]+\.)*(?:twitter|x|vxtwitter|fxtwitter|fixupx|xfixup|fixvx|twittpr|twitterez)\.com/(?:i/web/|[^/?#]+/)?status/(\d+)",
             )
             .unwrap()
         });
