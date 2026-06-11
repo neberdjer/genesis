@@ -8,11 +8,10 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    container:
-      image: rust:1.95
     steps:
       - uses: actions/checkout@v4
-      - run: rustup component add rustfmt clippy
+      - run: rustup toolchain install 1.95 --component rustfmt --component clippy --no-self-update
+      - run: rustup default 1.95
       - run: cargo fmt -- --check
       - run: cargo clippy -- -D warnings
 
