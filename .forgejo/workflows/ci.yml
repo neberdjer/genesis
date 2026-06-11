@@ -55,16 +55,35 @@ jobs:
     steps:
       - run: apk add --no-cache nodejs git
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ vars.DOCKER_REGISTRY }}
-          username: ${{ secrets.DOCKER_REGISTRY_USER }}
-          password: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ vars.DOCKER_IMAGE_NAME }}:${{ github.ref_name }}
-            ${{ vars.DOCKER_IMAGE_NAME }}:latest
+      - name: Wait for docker daemon
+        run: until docker info >/dev/null 2>&1; do sleep 1; done
+      - name: Validate tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          case "$REF_NAME" in
+            *[!A-Za-z0-9._-]*|"")
+              echo "Refusing tag with unsafe characters: $REF_NAME" >&2
+              exit 1
+              ;;
+          esac
+      - name: Login
+        env:
+          REGISTRY: ${{ vars.DOCKER_REGISTRY }}
+          USERNAME: ${{ secrets.DOCKER_REGISTRY_USER }}
+          TOKEN: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
+        run: |
+          echo "$TOKEN" | docker login -u "$USERNAME" --password-stdin "$REGISTRY"
+      - name: Build
+        env:
+          IMAGE: ${{ vars.DOCKER_IMAGE_NAME }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          docker build -t "$IMAGE:$REF_NAME" -t "$IMAGE:latest" .
+      - name: Push
+        env:
+          IMAGE: ${{ vars.DOCKER_IMAGE_NAME }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          docker push "$IMAGE:$REF_NAME"
+          docker push "$IMAGE:latest"
