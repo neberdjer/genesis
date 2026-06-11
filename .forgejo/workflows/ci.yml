@@ -40,23 +40,12 @@ jobs:
   docker-build:
     needs: [fmt, clippy]
     if: startsWith(github.ref, 'refs/tags/')
-    runs-on: docker
+    runs-on: privileged
     container:
       image: docker:cli
-    services:
-      docker:
-        image: docker:dind
-        options: --privileged
-        env:
-          DOCKER_TLS_CERTDIR: ""
-    env:
-      DOCKER_HOST: tcp://docker:2375
-      DOCKER_TLS_CERTDIR: ""
     steps:
       - run: apk add --no-cache nodejs git
       - uses: actions/checkout@v4
-      - name: Wait for docker daemon
-        run: until docker info >/dev/null 2>&1; do sleep 1; done
       - name: Validate tag
         env:
           REF_NAME: ${{ github.ref_name }}
