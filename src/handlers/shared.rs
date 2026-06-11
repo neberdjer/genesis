@@ -1,4 +1,7 @@
-use crate::constants::{EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS};
+use crate::constants::{
+    EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, MAX_RATE_LIMIT_ENTRIES,
+    RATE_LIMIT_SECONDS,
+};
 use crate::db;
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
@@ -10,9 +13,6 @@ use tracing::warn;
 
 static RATE_LIMITS: OnceLock<Mutex<HashMap<(serenity::UserId, &'static str), Instant>>> =
     OnceLock::new();
-
-const RATE_LIMIT_SECONDS: u64 = 10;
-const MAX_RATE_LIMIT_ENTRIES: usize = 10_000;
 
 pub fn check_rate_limit(user_id: serenity::UserId, handler: &'static str) -> bool {
     let rate_limits = RATE_LIMITS.get_or_init(|| Mutex::new(HashMap::new()));

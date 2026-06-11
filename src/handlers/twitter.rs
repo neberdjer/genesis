@@ -1,23 +1,9 @@
 use super::shared::{self, SettingCheck};
 use super::twitter_handler::TwitterPost;
-use crate::constants::TWITTER_DOWNLOAD_UA;
+use crate::constants::{TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA, TWITTER_HOSTS};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
-
-const TWITTER_ACCENT_COLOR: u32 = 0x1DA1F2;
-
-const TWITTER_HOSTS: &[&str] = &[
-    "twitter.com",
-    "x.com",
-    "vxtwitter.com",
-    "fxtwitter.com",
-    "fixupx.com",
-    "xfixup.com",
-    "fixvx.com",
-    "twittpr.com",
-    "twitterez.com",
-];
 
 fn is_twitter_url(word: &str) -> bool {
     let lower = word.to_ascii_lowercase();

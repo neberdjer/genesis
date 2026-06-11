@@ -1,3 +1,4 @@
+use super::deny;
 use crate::constants::{DISCORD_MESSAGE_LIMIT, TRUNCATED_MESSAGE_LIMIT};
 use crate::handlers::git_diff_handler::CommitDiff;
 use crate::handlers::git_diffs;
@@ -7,12 +8,6 @@ use crate::{Context, Error};
 use poise::CreateReply;
 use poise::serenity_prelude as serenity;
 use tracing::debug;
-
-async fn deny(ctx: Context<'_>, message: &str) -> Result<(), Error> {
-    ctx.send(CreateReply::default().content(message).ephemeral(true))
-        .await?;
-    Ok(())
-}
 
 /// Fetch and post a git file snippet or commit diff (GitHub, GitLab, Gitea, rustdoc)
 #[poise::command(

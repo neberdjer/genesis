@@ -1,3 +1,4 @@
+use crate::constants::WELCOME_RATE_LIMIT_SECONDS;
 use crate::db;
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
@@ -7,8 +8,6 @@ use std::time::Instant;
 use tracing::{error, warn};
 
 static WELCOME_RATE_LIMITS: OnceLock<Mutex<HashMap<serenity::GuildId, Instant>>> = OnceLock::new();
-
-const WELCOME_RATE_LIMIT_SECONDS: u64 = 2;
 
 fn check_guild_welcome_rate_limit(guild_id: serenity::GuildId) -> bool {
     let rate_limits = WELCOME_RATE_LIMITS.get_or_init(|| Mutex::new(HashMap::new()));

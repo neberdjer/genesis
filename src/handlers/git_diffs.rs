@@ -1,6 +1,6 @@
 use super::git_diff_handler::CommitDiff;
 use super::shared::{self, SettingCheck};
-use crate::constants::{DISCORD_MESSAGE_LIMIT, FILES_PER_PAGE};
+use crate::constants::{DIFF_CACHE_MAX_ENTRIES, DISCORD_MESSAGE_LIMIT, FILES_PER_PAGE};
 use crate::db;
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
@@ -10,8 +10,6 @@ use std::time::Instant;
 use tracing::{error, warn};
 
 static DIFF_CACHE: OnceLock<Mutex<HashMap<String, CachedDiff>>> = OnceLock::new();
-
-const MAX_CACHE_ENTRIES: usize = 1000;
 
 struct CachedDiff {
     responses: Vec<String>,
@@ -67,9 +65,9 @@ fn get_cached_responses(commit: &CommitDiff) -> Option<Vec<String>> {
 fn cache_responses(commit: &CommitDiff, responses: Vec<String>) {
     let cache = DIFF_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(mut cache) = cache.lock() {
-        if cache.len() >= MAX_CACHE_ENTRIES {
+        if cache.len() >= DIFF_CACHE_MAX_ENTRIES {
             cache.retain(|_, v| !v.is_expired());
-            if cache.len() >= MAX_CACHE_ENTRIES
+            if cache.len() >= DIFF_CACHE_MAX_ENTRIES
                 && let Some(oldest_key) = cache
                     .iter()
                     .min_by_key(|(_, v)| v.timestamp)

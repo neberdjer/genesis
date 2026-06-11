@@ -1,11 +1,9 @@
 use super::shared::{self, SettingCheck};
 use super::tiktok_handler::TikTokPost;
-use crate::constants::TIKTOK_DOWNLOAD_UA;
+use crate::constants::{TIKTOK_ACCENT_COLOR, TIKTOK_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
-
-const TIKTOK_ACCENT_COLOR: u32 = 0x000000;
 
 fn is_tiktok_url(word: &str) -> bool {
     let lower = word.to_ascii_lowercase();

@@ -1,3 +1,4 @@
+use super::deny;
 use crate::handlers::instagram_handler::InstagramPost;
 use crate::handlers::reddit_handler::RedditPost;
 use crate::handlers::shared;
@@ -8,12 +9,6 @@ use crate::{Context, Error};
 use poise::CreateReply;
 use poise::serenity_prelude as serenity;
 use tracing::debug;
-
-async fn deny(ctx: Context<'_>, message: &str) -> Result<(), Error> {
-    ctx.send(CreateReply::default().content(message).ephemeral(true))
-        .await?;
-    Ok(())
-}
 
 /// Fetch and post an Instagram link (post, reel, IGTV, photo carousel)
 #[poise::command(

@@ -1,11 +1,9 @@
 use super::reddit_handler::RedditPost;
 use super::shared::{self, SettingCheck};
-use crate::constants::REDDIT_DOWNLOAD_UA;
+use crate::constants::{REDDIT_ACCENT_COLOR, REDDIT_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
-
-const REDDIT_ACCENT_COLOR: u32 = 0xFF4500;
 
 fn is_reddit_url(word: &str) -> bool {
     let lower = word.to_ascii_lowercase();

@@ -1,11 +1,11 @@
 use super::instagram_handler::InstagramPost;
 use super::shared::{self, SettingCheck};
-use crate::constants::{INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS};
+use crate::constants::{
+    INSTAGRAM_ACCENT_COLOR, INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS,
+};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
-
-const INSTAGRAM_ACCENT_COLOR: u32 = 0xE4405F;
 
 fn ua_for_media_url(url: &str) -> &'static str {
     if INSTAGRAM_MIRRORS.iter().any(|m| url.contains(m)) {

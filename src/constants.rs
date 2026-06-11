@@ -38,3 +38,28 @@ pub const REDDIT_USER_AGENT: &str = concat!(
 );
 pub const REDDIT_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
 pub const REDDIT_MAX_GALLERY_ITEMS: usize = 20;
+
+pub const TIMEZONE_API: &str = "https://timezone.creations.works/v1/get";
+pub const TIMEZONE_REGISTER_URL: &str = "https://timezone.creations.works/";
+
+pub const INSTAGRAM_ACCENT_COLOR: u32 = 0xE4405F;
+pub const TWITTER_ACCENT_COLOR: u32 = 0x1DA1F2;
+pub const TIKTOK_ACCENT_COLOR: u32 = 0x000000;
+pub const REDDIT_ACCENT_COLOR: u32 = 0xFF4500;
+
+pub const TWITTER_HOSTS: &[&str] = &[
+    "twitter.com",
+    "x.com",
+    "vxtwitter.com",
+    "fxtwitter.com",
+    "fixupx.com",
+    "xfixup.com",
+    "fixvx.com",
+    "twittpr.com",
+    "twitterez.com",
+];
+
+pub const RATE_LIMIT_SECONDS: u64 = 10;
+pub const MAX_RATE_LIMIT_ENTRIES: usize = 10_000;
+pub const WELCOME_RATE_LIMIT_SECONDS: u64 = 2;
+pub const DIFF_CACHE_MAX_ENTRIES: usize = 1000;
