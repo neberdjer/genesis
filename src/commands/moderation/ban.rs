@@ -12,9 +12,9 @@ use tracing::info;
 pub async fn ban(
     ctx: Context<'_>,
     #[description = "User to ban"] user: serenity::User,
-    #[description = "Reason for ban"] reason: Option<String>,
     #[description = "Delete message history (days, 0-7)"] delete_days: Option<u8>,
     #[description = "Soft ban (ban then immediately unban)"] softban: Option<bool>,
+    #[description = "Reason for ban"] reason: Option<String>,
 ) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()

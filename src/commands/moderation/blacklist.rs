@@ -21,16 +21,17 @@ use super::check_owner;
     )
 )]
 pub async fn blacklist(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.say(
+    let p = ctx.prefix();
+    ctx.say(format!(
         "Available subcommands:\n\
-         - `/blacklist add` — blacklist a user\n\
-         - `/blacklist remove` — remove a user from the blacklist\n\
-         - `/blacklist add_server` — blacklist a server\n\
-         - `/blacklist remove_server` — remove a server from the blacklist\n\
-         - `/blacklist add_domain` — globally block a domain\n\
-         - `/blacklist remove_domain` — remove a domain from the global blocklist\n\
-         - `/blacklist domains` — list globally blocked domains",
-    )
+         - `{p}blacklist add` — blacklist a user\n\
+         - `{p}blacklist remove` — remove a user from the blacklist\n\
+         - `{p}blacklist add_server` — blacklist a server\n\
+         - `{p}blacklist remove_server` — remove a server from the blacklist\n\
+         - `{p}blacklist add_domain` — globally block a domain\n\
+         - `{p}blacklist remove_domain` — remove a domain from the global blocklist\n\
+         - `{p}blacklist domains` — list globally blocked domains"
+    ))
     .await?;
     Ok(())
 }

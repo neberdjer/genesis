@@ -114,6 +114,38 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
+/// Builds a `<required> [optional]` signature from a command's parameters.
+fn param_signature(cmd: &poise::Command<Data, Error>) -> String {
+    cmd.parameters
+        .iter()
+        .map(|p| {
+            if p.required {
+                format!("<{}>", p.name)
+            } else {
+                format!("[{}]", p.name)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Appends the `**Arguments:**` block listing each parameter and its description.
+fn append_arguments(body: &mut String, cmd: &poise::Command<Data, Error>) {
+    if cmd.parameters.is_empty() {
+        return;
+    }
+    body.push_str("\n**Arguments:**");
+    for param in &cmd.parameters {
+        let req = if param.required {
+            "required"
+        } else {
+            "optional"
+        };
+        let pdesc = param.description.as_deref().unwrap_or("");
+        body.push_str(&format!("\n- `{}` ({}) — {}", param.name, req, pdesc));
+    }
+}
+
 /// Show help for all commands or a specific command
 #[poise::command(slash_command, prefix_command)]
 async fn help(
@@ -121,17 +153,46 @@ async fn help(
     #[description = "Specific command to show help for"] command: Option<String>,
 ) -> Result<(), Error> {
     let commands = &ctx.framework().options().commands;
+    let prefix = ctx.prefix();
 
     if let Some(name) = command {
-        let target = name.trim().trim_start_matches('/');
+        let target = name
+            .trim()
+            .trim_start_matches(prefix)
+            .trim_start_matches('/');
         if let Some(cmd) = commands.iter().find(|c| c.name == target) {
             let desc = cmd.description.as_deref().unwrap_or("(no description)");
-            let mut body = format!("**/{}** — {}", cmd.name, desc);
+            let mut body = format!("**{}{}** — {}", prefix, cmd.name, desc);
+
+            if !cmd.parameters.is_empty() {
+                body.push_str(&format!(
+                    "\n\n**Usage:** `{}{} {}`\n",
+                    prefix,
+                    cmd.name,
+                    param_signature(cmd)
+                ));
+                append_arguments(&mut body, cmd);
+            }
+
             if !cmd.subcommands.is_empty() {
                 body.push_str("\n\n**Subcommands:**");
                 for sub in &cmd.subcommands {
                     let sub_desc = sub.description.as_deref().unwrap_or("");
-                    body.push_str(&format!("\n- `/{} {}` — {}", cmd.name, sub.name, sub_desc));
+                    let sig = param_signature(sub);
+                    if sig.is_empty() {
+                        body.push_str(&format!(
+                            "\n- `{}{} {}` — {}",
+                            prefix, cmd.name, sub.name, sub_desc
+                        ));
+                    } else {
+                        body.push_str(&format!(
+                            "\n- `{}{} {} {}` — {}",
+                            prefix, cmd.name, sub.name, sig, sub_desc
+                        ));
+                    }
+                    let mut arg_block = String::new();
+                    append_arguments(&mut arg_block, sub);
+                    body.push_str(&arg_block.replace('\n', "\n  "));
                 }
             }
             ctx.say(body).await?;
@@ -147,9 +208,12 @@ async fn help(
             continue;
         }
         let desc = cmd.description.as_deref().unwrap_or("");
-        lines.push(format!("- `/{}` — {}", cmd.name, desc));
+        lines.push(format!("- `{}{}` — {}", prefix, cmd.name, desc));
     }
-    lines.push("\nUse `/help <command>` for details on a specific command.".to_string());
+    lines.push(format!(
+        "\nUse `{}help <command>` for details on a specific command.",
+        prefix
+    ));
     ctx.say(lines.join("\n")).await?;
     Ok(())
 }
