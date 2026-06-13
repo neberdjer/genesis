@@ -12,7 +12,10 @@ use tracing::info;
 pub async fn ban(
     ctx: Context<'_>,
     #[description = "User to ban"] user: serenity::User,
-    #[description = "Delete message history (days, 0-7)"] delete_days: Option<u8>,
+    #[description = "Delete message history (days, 0-7)"]
+    #[min = 0]
+    #[max = 7]
+    delete_days: Option<u8>,
     #[description = "Soft ban (ban then immediately unban)"] softban: Option<bool>,
     #[description = "Reason for ban"] reason: Option<String>,
 ) -> Result<(), Error> {

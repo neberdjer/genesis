@@ -2,6 +2,16 @@ use crate::handlers::shared::normalize_domain;
 use crate::{Context, Error, db};
 use poise::serenity_prelude as serenity;
 
+const SERVICES: &[&str] = &[
+    "git_diffs",
+    "git_compares",
+    "git_links",
+    "twitter",
+    "tiktok",
+    "instagram",
+    "reddit",
+];
+
 /// Configure server-wide bot settings (admin only)
 #[poise::command(
     slash_command,
@@ -33,6 +43,25 @@ async fn toggle(
     let guild_id = ctx
         .guild_id()
         .ok_or("This command can only be used in a server.")?;
+
+    let service = service.to_ascii_lowercase();
+    if !SERVICES.contains(&service.as_str()) {
+        ctx.send(
+            poise::CreateReply::default()
+                .content(format!(
+                    "Unknown service `{}`. Valid options: {}.",
+                    service,
+                    SERVICES
+                        .iter()
+                        .map(|s| format!("`{}`", s))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+                .ephemeral(true),
+        )
+        .await?;
+        return Ok(());
+    }
 
     let pool = &ctx.data().pool;
 
@@ -152,19 +181,10 @@ async fn autocomplete_service<'a>(
     _ctx: Context<'_>,
     partial: &'a str,
 ) -> serenity::CreateAutocompleteResponse<'a> {
-    let services = [
-        "git_diffs",
-        "git_compares",
-        "git_links",
-        "twitter",
-        "tiktok",
-        "instagram",
-        "reddit",
-    ];
-
-    let choices: Vec<_> = services
+    let partial_lower = partial.to_ascii_lowercase();
+    let choices: Vec<_> = SERVICES
         .iter()
-        .filter(|name| name.starts_with(partial))
+        .filter(|name| name.starts_with(&partial_lower))
         .map(|name| serenity::AutocompleteChoice::from(*name))
         .collect();
 
