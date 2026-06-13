@@ -262,6 +262,55 @@ pub async fn update_server_setting(
     Ok(())
 }
 
+pub async fn get_bot_status(
+    pool: &PgPool,
+) -> Result<Option<(String, String, String)>, sqlx::Error> {
+    let row = sqlx::query(
+        r#"
+        SELECT status_type, status_text, online_status
+        FROM bot_status
+        WHERE id = TRUE
+        "#,
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| {
+        (
+            r.get::<String, _>("status_type"),
+            r.get::<String, _>("status_text"),
+            r.get::<String, _>("online_status"),
+        )
+    }))
+}
+
+pub async fn set_bot_status(
+    pool: &PgPool,
+    status_type: &str,
+    status_text: &str,
+    online_status: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO bot_status (id, status_type, status_text, online_status, updated_at)
+        VALUES (TRUE, $1, $2, $3, NOW())
+        ON CONFLICT (id)
+        DO UPDATE SET
+            status_type = $1,
+            status_text = $2,
+            online_status = $3,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(status_type)
+    .bind(status_text)
+    .bind(online_status)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn is_user_blacklisted(pool: &PgPool, user_id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query_scalar::<_, bool>(
         r#"

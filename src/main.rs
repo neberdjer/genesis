@@ -3,7 +3,10 @@ mod constants;
 mod db;
 mod handlers;
 
-use constants::{DEFAULT_ENVIRONMENT, DEFAULT_PREFIX};
+use constants::{
+    DEFAULT_ENVIRONMENT, DEFAULT_ONLINE_STATUS, DEFAULT_PREFIX, DEFAULT_STATUS_TEXT,
+    DEFAULT_STATUS_TYPE,
+};
 use handlers::{
     handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_instagram_links,
     handle_member_join, handle_reddit_links, handle_tiktok_links, handle_twitter_links,
@@ -114,7 +117,6 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
-/// Builds a `<required> [optional]` signature from a command's parameters.
 fn param_signature(cmd: &poise::Command<Data, Error>) -> String {
     cmd.parameters
         .iter()
@@ -129,7 +131,6 @@ fn param_signature(cmd: &poise::Command<Data, Error>) -> String {
         .join(" ")
 }
 
-/// Appends the `**Arguments:**` block listing each parameter and its description.
 fn append_arguments(body: &mut String, cmd: &poise::Command<Data, Error>) {
     if cmd.parameters.is_empty() {
         return;
@@ -283,9 +284,28 @@ async fn main() -> Result<(), Error> {
         .default_allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
         .build();
 
+    let (status_type, status_text, online_status) = db::get_bot_status(&data.pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| {
+            (
+                DEFAULT_STATUS_TYPE.to_string(),
+                DEFAULT_STATUS_TEXT.to_string(),
+                DEFAULT_ONLINE_STATUS.to_string(),
+            )
+        });
+    let (activity, status) = commands::moderation::status::presence_from_parts(
+        &status_type,
+        &status_text,
+        &online_status,
+    );
+
     let mut client = serenity::ClientBuilder::new_with_http(token, Arc::new(http), intents)
         .framework(Box::new(poise::Framework::new(options)))
         .event_handler(Arc::new(Handler))
+        .activity(activity)
+        .status(status)
         .data(Arc::new(data) as _)
         .await
         .map_err(|e| {
