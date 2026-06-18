@@ -119,6 +119,7 @@ pub(super) fn layout(title: &str, active: &str, user: Option<&User>, body: Marku
                             a href="/tos" { "terms" }
                             a href="/privacy" { "privacy" }
                             a href="/faq" { "faq" }
+                            a href="https://heliopolis.live/atums/genesis" target="_blank" rel="noopener" { "source" }
                         }
                         div.foot-brand {
                             img.foot-logo src="/static/logo.svg" alt="";
