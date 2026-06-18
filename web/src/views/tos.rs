@@ -84,8 +84,8 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
             }
 
             h2.faq-section { "contact" }
-            @if !config.support_invite.is_empty() {
-                p { "join the support server: " a href=(config.support_invite) { (config.support_invite) } }
+            @if let Some(url) = config.support_invite_url() {
+                p { "join the support server: " a href=(url) { (url) } }
             }
             p { "or email " a href=(format!("mailto:{}", config.contact_email)) { (config.contact_email) } "." }
         }

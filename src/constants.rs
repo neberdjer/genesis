@@ -70,9 +70,6 @@ pub const DIFF_CACHE_MAX_ENTRIES: usize = 1000;
 
 pub const COMMAND_SCOPE_GLOBAL: &str = "global";
 
-/// Commands that admins (per server) and the owner (globally) can disable.
-/// Infrastructure commands (help, settings, the toggle commands themselves) and
-/// owner-only commands are intentionally excluded so nobody can lock themselves out.
 pub const TOGGLEABLE_COMMANDS: &[&str] = &[
     "instagram",
     "twitter",

@@ -62,6 +62,21 @@ impl Config {
         )
     }
 
+    pub fn support_invite_url(&self) -> Option<String> {
+        let v = self.support_invite.trim();
+        if v.is_empty() {
+            return None;
+        }
+        if v.starts_with("http://") || v.starts_with("https://") {
+            return Some(v.to_string());
+        }
+        let code = v
+            .trim_start_matches("discord.gg/")
+            .trim_start_matches("discord.com/invite/")
+            .trim_start_matches('/');
+        Some(format!("https://discord.gg/{code}"))
+    }
+
     pub fn user_install_url(&self) -> String {
         format!(
             "https://discord.com/oauth2/authorize?client_id={}&integration_type=1&scope=applications.commands",

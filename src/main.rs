@@ -92,9 +92,6 @@ async fn status_poller(ctx: serenity::Context) {
     }
 }
 
-// Runs before every command. Blocks commands that an admin disabled for this
-// server or that the owner disabled globally. Only the toggleable commands are
-// ever blocked, so infrastructure and owner commands can never be locked out.
 async fn command_enabled_check(ctx: Context<'_>) -> Result<bool, Error> {
     let name = ctx.command().name.to_string();
     if !TOGGLEABLE_COMMANDS.contains(&name.as_str()) {

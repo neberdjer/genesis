@@ -81,8 +81,6 @@ fn cache_responses(commit: &CommitDiff, responses: Vec<String>) {
     }
 }
 
-/// Cheap, host-agnostic gate used before any database work: does this word even
-/// look like a commit or compare URL? Catches github, gitlab, and gitea/forgejo.
 pub fn looks_like_commit_url(word: &str) -> bool {
     word.contains("/commit/") || word.contains("/compare/")
 }
@@ -443,7 +441,6 @@ pub async fn handle_diff_pagination(
     let direction = parts[1];
     let rest = parts[2];
 
-    // {platform}{|host}:{owner}:{repo}:{commit}{|filter}_{page}
     let colon_parts: Vec<&str> = rest.splitn(4, ':').collect();
     if colon_parts.len() < 4 {
         return;
@@ -510,7 +507,6 @@ pub async fn handle_diff_pagination(
         return;
     };
 
-    // {commit}{|filter}_{page}
     let (commit_and_filter, page_str) = match commit_filter_page.rsplit_once('_') {
         Some((cf, p)) => (cf, p),
         None => return,

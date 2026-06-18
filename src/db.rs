@@ -284,19 +284,12 @@ pub async fn get_bot_status(
     }))
 }
 
-// The status is set from the web dashboard; the bot only reads it at startup.
-
-// Custom git hosts are added/removed from the web dashboard (which has its own
-// database access); the bot only needs to read the list to recognize their
-// commit and compare URLs.
 pub async fn list_git_hosts(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar::<_, String>("SELECT domain FROM git_hosts ORDER BY domain")
         .fetch_all(pool)
         .await
 }
 
-/// Returns true unless the command is disabled at the global scope or for the
-/// given guild. Absence of a row means enabled (the default). Fails open.
 pub async fn is_command_enabled(pool: &PgPool, guild_id: Option<&str>, command: &str) -> bool {
     let mut scopes = vec![crate::constants::COMMAND_SCOPE_GLOBAL.to_string()];
     if let Some(g) = guild_id {
@@ -319,8 +312,6 @@ pub async fn is_command_enabled(pool: &PgPool, guild_id: Option<&str>, command: 
     }
 }
 
-/// Sets a command override for a scope. `enabled = true` clears any override
-/// (back to the default-on state); `false` records a disable.
 pub async fn set_command_override(
     pool: &PgPool,
     scope: &str,
@@ -350,7 +341,6 @@ pub async fn set_command_override(
     Ok(())
 }
 
-/// Lists the commands disabled for a scope.
 pub async fn list_disabled_commands(
     pool: &PgPool,
     scope: &str,

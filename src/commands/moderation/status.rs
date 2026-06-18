@@ -1,8 +1,5 @@
 use poise::serenity_prelude as serenity;
 
-// These enums and `presence_from_parts` are kept so the bot can apply the
-// status stored in the database at startup. The status itself is set from the
-// web dashboard, not an in-Discord command.
 #[derive(Debug, poise::ChoiceParameter)]
 pub enum StatusKind {
     #[name = "playing"]
