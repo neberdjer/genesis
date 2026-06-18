@@ -5,7 +5,7 @@ mod handlers;
 
 use constants::{
     DEFAULT_ENVIRONMENT, DEFAULT_ONLINE_STATUS, DEFAULT_PREFIX, DEFAULT_STATUS_TEXT,
-    DEFAULT_STATUS_TYPE, TOGGLEABLE_COMMANDS,
+    DEFAULT_STATUS_TYPE, STATUS_POLL_SECONDS, TOGGLEABLE_COMMANDS,
 };
 use handlers::{
     handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_instagram_links,
@@ -17,7 +17,8 @@ use tracing::{error, info, warn};
 
 use sqlx::PgPool;
 use std::sync::Arc;
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 pub struct Data {
     pub pool: Arc<PgPool>,
@@ -57,7 +58,36 @@ impl serenity::EventHandler for Handler {
             serenity::FullEvent::GuildMemberAddition { new_member, .. } => {
                 handle_member_join(ctx, new_member, Some(&data.pool)).await;
             }
+            serenity::FullEvent::Ready { .. } => {
+                static POLLER_STARTED: AtomicBool = AtomicBool::new(false);
+                if !POLLER_STARTED.swap(true, Ordering::SeqCst) {
+                    tokio::spawn(status_poller(ctx.clone()));
+                }
+            }
             _ => {}
+        }
+    }
+}
+
+async fn status_poller(ctx: serenity::Context) {
+    let data = ctx.data::<Data>();
+    let mut interval = tokio::time::interval(Duration::from_secs(STATUS_POLL_SECONDS));
+    let mut last: Option<(String, String, String)> = None;
+
+    loop {
+        interval.tick().await;
+        match db::get_bot_status(&data.pool).await {
+            Ok(Some(status)) => {
+                if last.as_ref() != Some(&status) {
+                    let (activity, online) = commands::moderation::status::presence_from_parts(
+                        &status.0, &status.1, &status.2,
+                    );
+                    ctx.set_presence(Some(activity), online);
+                    last = Some(status);
+                }
+            }
+            Ok(None) => {}
+            Err(e) => warn!("Failed to poll bot status: {}", e),
         }
     }
 }
