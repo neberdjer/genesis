@@ -10,7 +10,6 @@ const SERVICES: &[&str] = &[
     "twitter",
     "tiktok",
     "instagram",
-    "reddit",
 ];
 
 /// Configure server-wide bot settings (admin only)

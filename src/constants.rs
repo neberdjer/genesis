@@ -35,21 +35,12 @@ pub const TWITTER_DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) 
 
 pub const TIKTOK_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
 
-pub const REDDIT_USER_AGENT: &str = concat!(
-    "linux:works.creations.genesis:",
-    env!("CARGO_PKG_VERSION"),
-    " (Discord bot)"
-);
-pub const REDDIT_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
-pub const REDDIT_MAX_GALLERY_ITEMS: usize = 20;
-
 pub const TIMEZONE_API: &str = "https://timezone.creations.works/v1/get";
 pub const TIMEZONE_REGISTER_URL: &str = "https://timezone.creations.works/";
 
 pub const INSTAGRAM_ACCENT_COLOR: u32 = 0xE4405F;
 pub const TWITTER_ACCENT_COLOR: u32 = 0x1DA1F2;
 pub const TIKTOK_ACCENT_COLOR: u32 = 0x000000;
-pub const REDDIT_ACCENT_COLOR: u32 = 0xFF4500;
 
 pub const TWITTER_HOSTS: &[&str] = &[
     "twitter.com",
@@ -74,7 +65,6 @@ pub const TOGGLEABLE_COMMANDS: &[&str] = &[
     "instagram",
     "twitter",
     "tiktok",
-    "reddit",
     "git",
     "timezone",
     "time",

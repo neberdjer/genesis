@@ -9,7 +9,7 @@ use constants::{
 };
 use handlers::{
     handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_instagram_links,
-    handle_member_join, handle_reddit_links, handle_tiktok_links, handle_twitter_links,
+    handle_member_join, handle_tiktok_links, handle_twitter_links,
 };
 use poise::serenity_prelude as serenity;
 use std::env;
@@ -46,7 +46,6 @@ impl serenity::EventHandler for Handler {
                     handle_twitter_links(ctx, new_message, Some(&data.pool)),
                     handle_tiktok_links(ctx, new_message, Some(&data.pool)),
                     handle_instagram_links(ctx, new_message, Some(&data.pool)),
-                    handle_reddit_links(ctx, new_message, Some(&data.pool)),
                 );
             }
             serenity::FullEvent::InteractionCreate {

@@ -24,7 +24,6 @@ pub(super) fn ico(name: &str) -> Markup {
         "twitter" => include_str!("../../static/icons/twitter.svg"),
         "instagram" => include_str!("../../static/icons/instagram.svg"),
         "tiktok" => include_str!("../../static/icons/tiktok.svg"),
-        "reddit" => include_str!("../../static/icons/reddit.svg"),
         "github" => include_str!("../../static/icons/github.svg"),
         "gitlab" => include_str!("../../static/icons/gitlab.svg"),
         _ => return PreEscaped(String::new()),

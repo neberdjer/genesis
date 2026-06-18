@@ -29,11 +29,6 @@ pub const FEATURE_GROUPS: &[FeatureGroup] = &[
                 desc: "videos and photo slideshows",
             },
             Feature {
-                icon: "reddit",
-                title: "reddit",
-                desc: "posts, galleries, and videos",
-            },
-            Feature {
                 icon: "github",
                 title: "github and gitlab",
                 desc: "file snippets and commit diffs with pagination",
@@ -62,7 +57,6 @@ pub const SUPPORTED_DOMAINS: &[&str] = &[
     "x.com",
     "instagram.com",
     "tiktok.com",
-    "reddit.com",
     "github.com",
     "gitlab.com",
 ];
@@ -97,10 +91,6 @@ pub const COMMAND_GROUPS: &[Group] = &[
             Command {
                 usage: "/tiktok <url>",
                 desc: "post a tiktok video or photo slideshow",
-            },
-            Command {
-                usage: "/reddit <url>",
-                desc: "post a reddit link (post, gallery, video)",
             },
             Command {
                 usage: "/git <url> [only_me]",
@@ -184,7 +174,6 @@ pub const TOGGLEABLE_COMMANDS: &[&str] = &[
     "instagram",
     "twitter",
     "tiktok",
-    "reddit",
     "git",
     "timezone",
     "time",

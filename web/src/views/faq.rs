@@ -15,7 +15,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
             details.faq-item open[true] {
                 summary.faq-q { "what does genesis do?" }
                 div.faq-a {
-                    p { "discord's built-in previews for twitter / x, instagram, tiktok, and reddit are often broken: the video won't play, carousel images go missing, or the text is cut off." }
+                    p { "discord's built-in previews for twitter / x, instagram, and tiktok are often broken: the video won't play, carousel images go missing, or the text is cut off." }
                     p { "genesis spots those links and replaces the preview with a clean embed that shows the video, every image, and the full post." }
                 }
             }
@@ -27,7 +27,6 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                         li { "twitter / x, including fxtwitter and vxtwitter links" }
                         li { "instagram posts, reels, and full photo carousels" }
                         li { "tiktok videos and photo slideshows" }
-                        li { "reddit posts, galleries, and videos" }
                         li { "github and gitlab file snippets and commit diffs" }
                     }
                     p { "it also has timezone tools. see the " a href="/features" { "features" } " page for the full list." }
@@ -56,7 +55,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                     p {
                         "the slash commands ("
                         code { "/twitter" } ", " code { "/instagram" } ", " code { "/tiktok" } ", "
-                        code { "/reddit" } ", " code { "/git" }
+                        code { "/git" }
                         ") are there for dms, group chats, or posting one on demand."
                     }
                 }
@@ -67,7 +66,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                     p {
                         "yes. the slash commands ("
                         code { "/instagram" } ", " code { "/twitter" } ", " code { "/tiktok" } ", "
-                        code { "/reddit" } ", " code { "/git" } ", " code { "/timezone" }
+                        code { "/git" } ", " code { "/timezone" }
                         ") work in dms and group chats if you added genesis to your account."
                     }
                 }

@@ -150,7 +150,12 @@ fn html(markup: maud::Markup) -> Html<String> {
 
 async fn landing(State(state): State<AppState>, jar: PrivateCookieJar) -> Html<String> {
     let session = session::read_session(&jar);
-    let stats = state.app_stats().await;
+    let mut stats = state.app_stats().await;
+    if let Some(s) = stats.as_mut()
+        && let Ok(ids) = state.bot_guild_ids().await
+    {
+        s.guild_count = ids.len() as u64;
+    }
     html(views::landing(
         &state.config,
         stats,
@@ -524,7 +529,6 @@ async fn save_settings(
         twitter: form.contains_key("twitter"),
         tiktok: form.contains_key("tiktok"),
         instagram: form.contains_key("instagram"),
-        reddit: form.contains_key("reddit"),
         ..db::Settings::defaults()
     };
     match db::set_settings(&state.pool, &guild_id, &settings).await {

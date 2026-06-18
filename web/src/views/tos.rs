@@ -24,7 +24,7 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
             }
             ul {
                 li {
-                    "twitter / x, instagram, tiktok, and reddit: it downloads the post's media and "
+                    "twitter / x, instagram, and tiktok: it downloads the post's media and "
                     "re-uploads it to discord, then hides the preview on your original message. it does "
                     "not delete your message."
                 }
@@ -44,9 +44,8 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
             p {
                 "embeds are built from content other people posted on third-party platforms. that content "
                 "belongs to its creators and platforms and may be copyrighted or age-restricted. genesis "
-                "re-flags reddit media marked nsfw as a spoiler, but does not otherwise rate or moderate "
-                "what it re-embeds. we are not responsible for content that originates elsewhere; report "
-                "anything that shouldn't be there and we'll act on it."
+                "does not rate or moderate what it re-embeds. we are not responsible for content that "
+                "originates elsewhere; report anything that shouldn't be there and we'll act on it."
             }
 
             h2.faq-section { "acceptable use" }
