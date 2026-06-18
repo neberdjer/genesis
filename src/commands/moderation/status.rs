@@ -1,10 +1,8 @@
-use crate::{Context, Error, db};
-use poise::ChoiceParameter;
 use poise::serenity_prelude as serenity;
-use tracing::info;
 
-use super::check_owner;
-
+// These enums and `presence_from_parts` are kept so the bot can apply the
+// status stored in the database at startup. The status itself is set from the
+// web dashboard, not an in-Discord command.
 #[derive(Debug, poise::ChoiceParameter)]
 pub enum StatusKind {
     #[name = "playing"]
@@ -82,38 +80,4 @@ pub fn presence_from_parts(
         StatusKind::from_name(status_type).activity(status_text.to_string()),
         OnlineKind::from_name(online).online_status(),
     )
-}
-
-/// Owner-only: set the bot's activity and online status
-#[poise::command(slash_command, prefix_command, check = "check_owner")]
-pub async fn status(
-    ctx: Context<'_>,
-    #[description = "Activity type"] kind: StatusKind,
-    #[description = "Status text"] text: String,
-    #[description = "Online status (defaults to online)"] online: Option<OnlineKind>,
-) -> Result<(), Error> {
-    let online = online.unwrap_or(OnlineKind::Online);
-
-    db::set_bot_status(&ctx.data().pool, kind.name(), &text, online.name()).await?;
-
-    ctx.serenity_context()
-        .set_presence(Some(kind.activity(text.clone())), online.online_status());
-
-    info!(
-        "Bot status set by {}: {} {} ({})",
-        ctx.author().name,
-        kind.name(),
-        text,
-        online.name()
-    );
-
-    ctx.say(format!(
-        "Status updated: **{}** {} ({}).",
-        kind.name(),
-        text,
-        online.name()
-    ))
-    .await?;
-
-    Ok(())
 }

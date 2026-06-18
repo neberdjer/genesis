@@ -1,25 +1,15 @@
 pub mod ban;
-pub mod blacklist;
 pub mod kick;
-pub mod leave_server;
 pub mod status;
 
 pub use ban::ban;
-pub use blacklist::blacklist;
 pub use kick::kick;
-pub use leave_server::leave_server;
-pub use status::status;
 
-use crate::{Context, Data, Error};
+use crate::{Context, Data};
 use poise::serenity_prelude as serenity;
 
 pub fn commands() -> Vec<poise::Command<Data, crate::Error>> {
-    vec![ban(), kick(), blacklist(), leave_server(), status()]
-}
-
-pub(super) async fn check_owner(ctx: Context<'_>) -> Result<bool, Error> {
-    let owner_id = ctx.data().owner_id.ok_or("OWNER_ID not configured")?;
-    Ok(ctx.author().id == owner_id)
+    vec![ban(), kick()]
 }
 
 pub(super) fn get_highest_role(

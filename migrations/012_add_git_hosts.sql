@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS git_hosts (
+    domain TEXT PRIMARY KEY,
+    added_by TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

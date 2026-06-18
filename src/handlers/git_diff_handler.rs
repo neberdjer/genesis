@@ -7,11 +7,14 @@ static GITHUB_COMMIT_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITHUB_COMPARE_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITLAB_COMMIT_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITLAB_COMPARE_PATTERN: OnceLock<Regex> = OnceLock::new();
+static GITEA_COMMIT_PATTERN: OnceLock<Regex> = OnceLock::new();
+static GITEA_COMPARE_PATTERN: OnceLock<Regex> = OnceLock::new();
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum GitPlatform {
     GitHub,
     GitLab,
+    Gitea,
 }
 
 pub struct CommitDiff {
@@ -35,11 +38,66 @@ pub struct FileDiff {
 }
 
 impl CommitDiff {
-    pub fn parse(url: &str) -> Option<Self> {
+    pub fn parse(url: &str, gitea_hosts: &[String]) -> Option<Self> {
         Self::parse_github(url)
             .or_else(|| Self::parse_github_compare(url))
             .or_else(|| Self::parse_gitlab(url))
             .or_else(|| Self::parse_gitlab_compare(url))
+            .or_else(|| Self::parse_gitea(url, gitea_hosts))
+            .or_else(|| Self::parse_gitea_compare(url, gitea_hosts))
+    }
+
+    fn host_registered(host: &str, gitea_hosts: &[String]) -> bool {
+        let host = host.trim_start_matches("www.").to_ascii_lowercase();
+        gitea_hosts
+            .iter()
+            .any(|h| h.trim_start_matches("www.").eq_ignore_ascii_case(&host))
+    }
+
+    fn parse_gitea(url: &str, gitea_hosts: &[String]) -> Option<Self> {
+        let pattern = GITEA_COMMIT_PATTERN.get_or_init(|| {
+            Regex::new(r"https?://([^/]+)/([^/]+)/([^/]+)/commit/([0-9a-f]+)").unwrap()
+        });
+
+        let captures = pattern.captures(url)?;
+        let host = captures.get(1)?.as_str().to_string();
+        if !is_safe_host(&host) || !Self::host_registered(&host, gitea_hosts) {
+            return None;
+        }
+
+        Some(Self {
+            platform: GitPlatform::Gitea,
+            owner: captures.get(2)?.as_str().to_string(),
+            repo: captures.get(3)?.as_str().to_string(),
+            commit: captures.get(4)?.as_str().to_string(),
+            diff_hash: None,
+            host: Some(host),
+            file_filter: None,
+            is_compare: false,
+        })
+    }
+
+    fn parse_gitea_compare(url: &str, gitea_hosts: &[String]) -> Option<Self> {
+        let pattern = GITEA_COMPARE_PATTERN.get_or_init(|| {
+            Regex::new(r"https?://([^/]+)/([^/]+)/([^/]+)/compare/([^?]+)").unwrap()
+        });
+
+        let captures = pattern.captures(url)?;
+        let host = captures.get(1)?.as_str().to_string();
+        if !is_safe_host(&host) || !Self::host_registered(&host, gitea_hosts) {
+            return None;
+        }
+
+        Some(Self {
+            platform: GitPlatform::Gitea,
+            owner: captures.get(2)?.as_str().to_string(),
+            repo: captures.get(3)?.as_str().to_string(),
+            commit: captures.get(4)?.as_str().to_string(),
+            diff_hash: None,
+            host: Some(host),
+            file_filter: None,
+            is_compare: true,
+        })
     }
 
     fn parse_github(url: &str) -> Option<Self> {
@@ -199,6 +257,14 @@ impl CommitDiff {
                         host, full_path, self.commit
                     )
                 }
+            }
+            GitPlatform::Gitea => {
+                let host = self.host.as_deref().unwrap_or_default();
+                let kind = if self.is_compare { "compare" } else { "commit" };
+                format!(
+                    "https://{}/{}/{}/{}/{}.diff",
+                    host, self.owner, self.repo, kind, self.commit
+                )
             }
         }
     }

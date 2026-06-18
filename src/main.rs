@@ -5,7 +5,7 @@ mod handlers;
 
 use constants::{
     DEFAULT_ENVIRONMENT, DEFAULT_ONLINE_STATUS, DEFAULT_PREFIX, DEFAULT_STATUS_TEXT,
-    DEFAULT_STATUS_TYPE,
+    DEFAULT_STATUS_TYPE, TOGGLEABLE_COMMANDS,
 };
 use handlers::{
     handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_instagram_links,
@@ -22,7 +22,6 @@ use std::time::Instant;
 pub struct Data {
     pub pool: Arc<PgPool>,
     pub start_time: Instant,
-    pub owner_id: Option<serenity::UserId>,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -61,6 +60,30 @@ impl serenity::EventHandler for Handler {
             _ => {}
         }
     }
+}
+
+// Runs before every command. Blocks commands that an admin disabled for this
+// server or that the owner disabled globally. Only the toggleable commands are
+// ever blocked, so infrastructure and owner commands can never be locked out.
+async fn command_enabled_check(ctx: Context<'_>) -> Result<bool, Error> {
+    let name = ctx.command().name.to_string();
+    if !TOGGLEABLE_COMMANDS.contains(&name.as_str()) {
+        return Ok(true);
+    }
+
+    let guild_id = ctx.guild_id().map(|g| g.to_string());
+    if db::is_command_enabled(&ctx.data().pool, guild_id.as_deref(), &name).await {
+        return Ok(true);
+    }
+
+    let _ = ctx
+        .send(
+            poise::CreateReply::default()
+                .content("That command is disabled here.")
+                .ephemeral(true),
+        )
+        .await;
+    Ok(false)
 }
 
 async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
@@ -143,7 +166,7 @@ fn append_arguments(body: &mut String, cmd: &poise::Command<Data, Error>) {
             "optional"
         };
         let pdesc = param.description.as_deref().unwrap_or("");
-        body.push_str(&format!("\n- `{}` ({}) — {}", param.name, req, pdesc));
+        body.push_str(&format!("\n- `{}` ({}) - {}", param.name, req, pdesc));
     }
 }
 
@@ -163,7 +186,7 @@ async fn help(
             .trim_start_matches('/');
         if let Some(cmd) = commands.iter().find(|c| c.name == target) {
             let desc = cmd.description.as_deref().unwrap_or("(no description)");
-            let mut body = format!("**{}{}** — {}", prefix, cmd.name, desc);
+            let mut body = format!("**{}{}** - {}", prefix, cmd.name, desc);
 
             if !cmd.parameters.is_empty() {
                 body.push_str(&format!(
@@ -182,12 +205,12 @@ async fn help(
                     let sig = param_signature(sub);
                     if sig.is_empty() {
                         body.push_str(&format!(
-                            "\n- `{}{} {}` — {}",
+                            "\n- `{}{} {}` - {}",
                             prefix, cmd.name, sub.name, sub_desc
                         ));
                     } else {
                         body.push_str(&format!(
-                            "\n- `{}{} {} {}` — {}",
+                            "\n- `{}{} {} {}` - {}",
                             prefix, cmd.name, sub.name, sig, sub_desc
                         ));
                     }
@@ -209,7 +232,7 @@ async fn help(
             continue;
         }
         let desc = cmd.description.as_deref().unwrap_or("");
-        lines.push(format!("- `{}{}` — {}", prefix, cmd.name, desc));
+        lines.push(format!("- `{}{}` - {}", prefix, cmd.name, desc));
     }
     lines.push(format!(
         "\nUse `{}help <command>` for details on a specific command.",
@@ -248,15 +271,9 @@ async fn main() -> Result<(), Error> {
         environment, prefix
     );
 
-    let owner_id = env::var("OWNER_ID")
-        .ok()
-        .and_then(|id| id.parse::<u64>().ok())
-        .map(serenity::UserId::new);
-
     let data = Data {
         pool: Arc::new(pool),
         start_time: Instant::now(),
-        owner_id,
     };
 
     let mut all_commands = commands::all_commands();
@@ -269,6 +286,7 @@ async fn main() -> Result<(), Error> {
             prefix: Some(prefix.into()),
             ..Default::default()
         },
+        command_check: Some(|ctx| Box::pin(command_enabled_check(ctx))),
         on_error: |error| Box::pin(on_error(error)),
         ..Default::default()
     };

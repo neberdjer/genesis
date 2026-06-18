@@ -1,3 +1,4 @@
+use crate::constants::TOGGLEABLE_COMMANDS;
 use crate::handlers::shared::normalize_domain;
 use crate::{Context, Error, db};
 use poise::serenity_prelude as serenity;
@@ -17,17 +18,104 @@ const SERVICES: &[&str] = &[
     slash_command,
     guild_only,
     required_permissions = "ADMINISTRATOR",
-    subcommands("toggle", "block_domain", "unblock_domain", "blocked_domains")
+    subcommands(
+        "toggle",
+        "command",
+        "commands",
+        "block_domain",
+        "unblock_domain",
+        "blocked_domains"
+    )
 )]
 pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
     ctx.say(
         "Available subcommands:\n\
-         - `/settings toggle` — enable or disable a service\n\
-         - `/settings block_domain` — block a domain in this server\n\
-         - `/settings unblock_domain` — unblock a domain in this server\n\
-         - `/settings blocked_domains` — list blocked domains in this server",
+         - `/settings toggle` - enable or disable an auto-embed service\n\
+         - `/settings command` - enable or disable a command in this server\n\
+         - `/settings commands` - list commands disabled in this server\n\
+         - `/settings block_domain` - block a domain in this server\n\
+         - `/settings unblock_domain` - unblock a domain in this server\n\
+         - `/settings blocked_domains` - list blocked domains in this server",
     )
     .await?;
+    Ok(())
+}
+
+#[allow(clippy::unused_async)]
+async fn autocomplete_command<'a>(
+    _ctx: Context<'_>,
+    partial: &'a str,
+) -> serenity::CreateAutocompleteResponse<'a> {
+    let partial = partial.to_ascii_lowercase();
+    let choices: Vec<_> = TOGGLEABLE_COMMANDS
+        .iter()
+        .filter(|name| name.starts_with(&partial))
+        .map(|name| serenity::AutocompleteChoice::from(*name))
+        .collect();
+    serenity::CreateAutocompleteResponse::new().set_choices(choices)
+}
+
+/// Enable or disable a command in this server
+#[poise::command(slash_command, guild_only, required_permissions = "ADMINISTRATOR")]
+async fn command(
+    ctx: Context<'_>,
+    #[description = "Command to toggle"]
+    #[autocomplete = "autocomplete_command"]
+    command: String,
+    #[description = "True to enable, False to disable"] enabled: bool,
+) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("This command can only be used in a server.")?;
+
+    let command = command.trim().trim_start_matches('/').to_ascii_lowercase();
+    if !TOGGLEABLE_COMMANDS.contains(&command.as_str()) {
+        ctx.send(
+            poise::CreateReply::default()
+                .content(format!(
+                    "Unknown command `{}`. Options: {}.",
+                    command,
+                    TOGGLEABLE_COMMANDS
+                        .iter()
+                        .map(|c| format!("`{}`", c))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+                .ephemeral(true),
+        )
+        .await?;
+        return Ok(());
+    }
+
+    db::set_command_override(&ctx.data().pool, &guild_id.to_string(), &command, enabled).await?;
+
+    let status = if enabled { "enabled" } else { "disabled" };
+    ctx.say(format!(
+        "**{}** has been {} in this server.",
+        command, status
+    ))
+    .await?;
+    Ok(())
+}
+
+/// List commands disabled in this server
+#[poise::command(slash_command, guild_only, required_permissions = "ADMINISTRATOR")]
+async fn commands(ctx: Context<'_>) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("This command can only be used in a server.")?;
+
+    let disabled = db::list_disabled_commands(&ctx.data().pool, &guild_id.to_string()).await?;
+    if disabled.is_empty() {
+        ctx.say("No commands are disabled in this server.").await?;
+    } else {
+        let body = disabled
+            .iter()
+            .map(|c| format!("- {}", c))
+            .collect::<Vec<_>>()
+            .join("\n");
+        ctx.say(format!("**Disabled commands:**\n{}", body)).await?;
+    }
     Ok(())
 }
 

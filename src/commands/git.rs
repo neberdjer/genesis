@@ -4,7 +4,7 @@ use crate::handlers::git_diff_handler::CommitDiff;
 use crate::handlers::git_diffs;
 use crate::handlers::git_handler::GitFileLink;
 use crate::handlers::shared;
-use crate::{Context, Error};
+use crate::{Context, Error, db};
 use poise::CreateReply;
 use poise::serenity_prelude as serenity;
 use tracing::debug;
@@ -30,7 +30,8 @@ pub async fn git(
 
     let trimmed = url.trim();
 
-    if let Some(commit) = CommitDiff::parse(trimmed) {
+    let gitea_hosts = db::list_git_hosts(&data.pool).await.unwrap_or_default();
+    if let Some(commit) = CommitDiff::parse(trimmed, &gitea_hosts) {
         return send_diff(ctx, commit, only_me.unwrap_or(false)).await;
     }
 

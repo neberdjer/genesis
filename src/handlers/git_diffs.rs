@@ -81,8 +81,16 @@ fn cache_responses(commit: &CommitDiff, responses: Vec<String>) {
     }
 }
 
-pub fn is_commit_url(word: &str) -> bool {
-    is_github_commit_url(word) || is_gitlab_commit_url(word)
+/// Cheap, host-agnostic gate used before any database work: does this word even
+/// look like a commit or compare URL? Catches github, gitlab, and gitea/forgejo.
+pub fn looks_like_commit_url(word: &str) -> bool {
+    word.contains("/commit/") || word.contains("/compare/")
+}
+
+pub fn is_commit_url(word: &str, gitea_hosts: &[String]) -> bool {
+    is_github_commit_url(word)
+        || is_gitlab_commit_url(word)
+        || is_gitea_commit_url(word, gitea_hosts)
 }
 
 pub fn is_github_commit_url(word: &str) -> bool {
@@ -91,6 +99,19 @@ pub fn is_github_commit_url(word: &str) -> bool {
 
 pub fn is_gitlab_commit_url(word: &str) -> bool {
     word.contains("/-/commit/") || word.contains("/-/compare/")
+}
+
+pub fn is_gitea_commit_url(word: &str, gitea_hosts: &[String]) -> bool {
+    if !word.contains("/commit/") && !word.contains("/compare/") {
+        return false;
+    }
+    let Some(host) = shared::extract_host(word) else {
+        return false;
+    };
+    let host = host.trim_start_matches("www.").to_ascii_lowercase();
+    gitea_hosts
+        .iter()
+        .any(|h| h.trim_start_matches("www.").eq_ignore_ascii_case(&host))
 }
 
 pub fn clean_url(url: &str) -> &str {
@@ -119,6 +140,8 @@ pub fn create_pagination_buttons(
         (super::git_diff_handler::GitPlatform::GitHub, true) => "gH",
         (super::git_diff_handler::GitPlatform::GitLab, false) => "gl",
         (super::git_diff_handler::GitPlatform::GitLab, true) => "gL",
+        (super::git_diff_handler::GitPlatform::Gitea, false) => "gt",
+        (super::git_diff_handler::GitPlatform::Gitea, true) => "gT",
     };
 
     let host_part = commit.host.as_deref().unwrap_or("");
@@ -222,7 +245,7 @@ pub async fn handle_commit_diffs(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    if !msg.content.split_whitespace().any(is_commit_url) {
+    if !msg.content.split_whitespace().any(looks_like_commit_url) {
         return;
     }
 
@@ -241,15 +264,21 @@ pub async fn handle_commit_diffs(
         true
     };
 
+    let gitea_hosts = match pool {
+        Some(pool) => db::list_git_hosts(pool).await.unwrap_or_default(),
+        None => Vec::new(),
+    };
+
     let blocklist = shared::fetch_blocklist(pool, msg.guild_id).await;
 
-    handle_commit_diffs_impl(ctx, msg, git_compares_enabled, &blocklist).await;
+    handle_commit_diffs_impl(ctx, msg, git_compares_enabled, &gitea_hosts, &blocklist).await;
 }
 
 async fn handle_commit_diffs_impl(
     ctx: &serenity::Context,
     msg: &serenity::Message,
     git_compares_enabled: bool,
+    gitea_hosts: &[String],
     blocklist: &[String],
 ) {
     let words: Vec<&str> = msg.content.split_whitespace().collect();
@@ -261,7 +290,7 @@ async fn handle_commit_diffs_impl(
     let commit_url_indices: Vec<usize> = words
         .iter()
         .enumerate()
-        .filter(|(_, word)| is_commit_url(word))
+        .filter(|(_, word)| is_commit_url(word, gitea_hosts))
         .map(|(i, _)| i)
         .collect();
 
@@ -294,7 +323,7 @@ async fn handle_commit_diffs_impl(
     let mut found_commits: Vec<CommitDiff> = Vec::new();
 
     for &idx in &commit_url_indices {
-        if let Some(mut commit) = CommitDiff::parse(clean_url(words[idx])) {
+        if let Some(mut commit) = CommitDiff::parse(clean_url(words[idx]), gitea_hosts) {
             if let Some(&next_word) = words.get(idx + 1)
                 && looks_like_filename(next_word)
                 && (idx + 1 == words.len() || commit_url_indices.contains(&(idx + 2)))
@@ -465,6 +494,18 @@ pub async fn handle_diff_pagination(
             .map(|s| s.to_string())
             .or_else(|| Some("gitlab.com".to_string()));
         (super::git_diff_handler::GitPlatform::GitLab, true, host)
+    } else if let Some(rest) = platform_and_host.strip_prefix("gt") {
+        (
+            super::git_diff_handler::GitPlatform::Gitea,
+            false,
+            rest.strip_prefix('|').map(|s| s.to_string()),
+        )
+    } else if let Some(rest) = platform_and_host.strip_prefix("gT") {
+        (
+            super::git_diff_handler::GitPlatform::Gitea,
+            true,
+            rest.strip_prefix('|').map(|s| s.to_string()),
+        )
     } else {
         return;
     };

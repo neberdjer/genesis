@@ -284,31 +284,83 @@ pub async fn get_bot_status(
     }))
 }
 
-pub async fn set_bot_status(
-    pool: &PgPool,
-    status_type: &str,
-    status_text: &str,
-    online_status: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO bot_status (id, status_type, status_text, online_status, updated_at)
-        VALUES (TRUE, $1, $2, $3, NOW())
-        ON CONFLICT (id)
-        DO UPDATE SET
-            status_type = $1,
-            status_text = $2,
-            online_status = $3,
-            updated_at = NOW()
-        "#,
-    )
-    .bind(status_type)
-    .bind(status_text)
-    .bind(online_status)
-    .execute(pool)
-    .await?;
+// The status is set from the web dashboard; the bot only reads it at startup.
 
+// Custom git hosts are added/removed from the web dashboard (which has its own
+// database access); the bot only needs to read the list to recognize their
+// commit and compare URLs.
+pub async fn list_git_hosts(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar::<_, String>("SELECT domain FROM git_hosts ORDER BY domain")
+        .fetch_all(pool)
+        .await
+}
+
+/// Returns true unless the command is disabled at the global scope or for the
+/// given guild. Absence of a row means enabled (the default). Fails open.
+pub async fn is_command_enabled(pool: &PgPool, guild_id: Option<&str>, command: &str) -> bool {
+    let mut scopes = vec![crate::constants::COMMAND_SCOPE_GLOBAL.to_string()];
+    if let Some(g) = guild_id {
+        scopes.push(g.to_string());
+    }
+
+    match sqlx::query_scalar::<_, bool>(
+        "SELECT enabled FROM command_overrides WHERE command = $1 AND scope = ANY($2)",
+    )
+    .bind(command)
+    .bind(&scopes)
+    .fetch_all(pool)
+    .await
+    {
+        Ok(rows) => rows.into_iter().all(|enabled| enabled),
+        Err(e) => {
+            warn!("Failed to check command override for {}: {}", command, e);
+            true
+        }
+    }
+}
+
+/// Sets a command override for a scope. `enabled = true` clears any override
+/// (back to the default-on state); `false` records a disable.
+pub async fn set_command_override(
+    pool: &PgPool,
+    scope: &str,
+    command: &str,
+    enabled: bool,
+) -> Result<(), sqlx::Error> {
+    if enabled {
+        sqlx::query("DELETE FROM command_overrides WHERE scope = $1 AND command = $2")
+            .bind(scope)
+            .bind(command)
+            .execute(pool)
+            .await?;
+    } else {
+        sqlx::query(
+            r#"
+            INSERT INTO command_overrides (scope, command, enabled, updated_at)
+            VALUES ($1, $2, FALSE, NOW())
+            ON CONFLICT (scope, command)
+            DO UPDATE SET enabled = FALSE, updated_at = NOW()
+            "#,
+        )
+        .bind(scope)
+        .bind(command)
+        .execute(pool)
+        .await?;
+    }
     Ok(())
+}
+
+/// Lists the commands disabled for a scope.
+pub async fn list_disabled_commands(
+    pool: &PgPool,
+    scope: &str,
+) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT command FROM command_overrides WHERE scope = $1 AND enabled = FALSE ORDER BY command",
+    )
+    .bind(scope)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn is_user_blacklisted(pool: &PgPool, user_id: &str) -> Result<bool, sqlx::Error> {
@@ -324,41 +376,6 @@ pub async fn is_user_blacklisted(pool: &PgPool, user_id: &str) -> Result<bool, s
     Ok(result)
 }
 
-pub async fn add_user_to_blacklist(
-    pool: &PgPool,
-    user_id: &str,
-    reason: Option<&str>,
-    blacklisted_by: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO user_blacklist (user_id, reason, blacklisted_by)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (user_id) DO NOTHING
-        "#,
-    )
-    .bind(user_id)
-    .bind(reason)
-    .bind(blacklisted_by)
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-pub async fn remove_user_from_blacklist(pool: &PgPool, user_id: &str) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        r#"
-        DELETE FROM user_blacklist WHERE user_id = $1
-        "#,
-    )
-    .bind(user_id)
-    .execute(pool)
-    .await?;
-
-    Ok(result.rows_affected() > 0)
-}
-
 pub async fn is_server_blacklisted(pool: &PgPool, guild_id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query_scalar::<_, bool>(
         r#"
@@ -370,44 +387,6 @@ pub async fn is_server_blacklisted(pool: &PgPool, guild_id: &str) -> Result<bool
     .await?;
 
     Ok(result)
-}
-
-pub async fn add_server_to_blacklist(
-    pool: &PgPool,
-    guild_id: &str,
-    reason: Option<&str>,
-    blacklisted_by: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO server_blacklist (guild_id, reason, blacklisted_by)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (guild_id) DO NOTHING
-        "#,
-    )
-    .bind(guild_id)
-    .bind(reason)
-    .bind(blacklisted_by)
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-pub async fn remove_server_from_blacklist(
-    pool: &PgPool,
-    guild_id: &str,
-) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        r#"
-        DELETE FROM server_blacklist WHERE guild_id = $1
-        "#,
-    )
-    .bind(guild_id)
-    .execute(pool)
-    .await?;
-
-    Ok(result.rows_affected() > 0)
 }
 
 pub async fn count_blacklisted_users(pool: &PgPool) -> Result<i64, sqlx::Error> {
@@ -544,42 +523,6 @@ pub async fn set_welcome_role(
     .await?;
 
     Ok(())
-}
-
-pub async fn add_global_blocked_domain(
-    pool: &PgPool,
-    domain: &str,
-    blocked_by: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        INSERT INTO global_blocked_domains (domain, blocked_by)
-        VALUES ($1, $2)
-        ON CONFLICT (domain) DO NOTHING
-        "#,
-    )
-    .bind(domain)
-    .bind(blocked_by)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-pub async fn remove_global_blocked_domain(
-    pool: &PgPool,
-    domain: &str,
-) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM global_blocked_domains WHERE domain = $1")
-        .bind(domain)
-        .execute(pool)
-        .await?;
-    Ok(result.rows_affected() > 0)
-}
-
-pub async fn list_global_blocked_domains(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar::<_, String>("SELECT domain FROM global_blocked_domains ORDER BY domain")
-        .fetch_all(pool)
-        .await
 }
 
 pub async fn add_guild_blocked_domain(

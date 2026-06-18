@@ -66,3 +66,23 @@ pub const RATE_LIMIT_SECONDS: u64 = 10;
 pub const MAX_RATE_LIMIT_ENTRIES: usize = 10_000;
 pub const WELCOME_RATE_LIMIT_SECONDS: u64 = 2;
 pub const DIFF_CACHE_MAX_ENTRIES: usize = 1000;
+
+pub const COMMAND_SCOPE_GLOBAL: &str = "global";
+
+/// Commands that admins (per server) and the owner (globally) can disable.
+/// Infrastructure commands (help, settings, the toggle commands themselves) and
+/// owner-only commands are intentionally excluded so nobody can lock themselves out.
+pub const TOGGLEABLE_COMMANDS: &[&str] = &[
+    "instagram",
+    "twitter",
+    "tiktok",
+    "reddit",
+    "git",
+    "timezone",
+    "time",
+    "checkperms",
+    "ping",
+    "stats",
+    "ban",
+    "kick",
+];
