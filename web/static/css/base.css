@@ -1,0 +1,200 @@
+:root {
+	--color-bg: #0a1119;
+	--color-bg-elevated: #111b25;
+	--color-bg-hover: #19242f;
+
+	--color-border: #223141;
+	--color-border-hover: #324559;
+
+	--color-text: #e7eef4;
+	--color-text-secondary: #9cb0c1;
+	--color-text-muted: #899eb1;
+
+	--color-accent: #38bdf8;
+	--color-accent-hover: #7dd3fc;
+	--color-accent-strong: #0369a1;
+	--color-accent-muted: #0c1e2c;
+
+	--color-on: #34d399;
+
+	--color-success: #34d399;
+	--color-error: #f87171;
+
+	--spacing-xs: 0.25rem;
+	--spacing-sm: 0.5rem;
+	--spacing-md: 1rem;
+	--spacing-lg: 1.5rem;
+	--spacing-xl: 2rem;
+	--spacing-2xl: 3rem;
+
+	--radius-sm: 4px;
+	--radius-md: 6px;
+
+	--text-xs: 0.75rem;
+	--text-sm: 0.875rem;
+	--text-base: 1rem;
+	--text-lg: 1.125rem;
+	--text-xl: 1.25rem;
+	--text-2xl: 1.5rem;
+	--text-3xl: 1.875rem;
+
+	--font-normal: 400;
+	--font-medium: 500;
+	--font-semibold: 600;
+	--font-bold: 700;
+
+	--transition-fast: 0.15s ease;
+	--shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+	color-scheme: dark;
+}
+
+[data-theme="light"] {
+	--color-bg: #eef3f6;
+	--color-bg-elevated: #ffffff;
+	--color-bg-hover: #dfe8ee;
+
+	--color-border: #ccd7e0;
+	--color-border-hover: #adbecc;
+
+	--color-text: #0f1c27;
+	--color-text-secondary: #45586a;
+	--color-text-muted: #566a7c;
+
+	--color-accent: #0369a1;
+	--color-accent-hover: #075985;
+	--color-accent-muted: #d8ecf7;
+	--color-on: #047857;
+	--color-success: #047857;
+
+	color-scheme: light;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	font-family:
+		-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+		Arial, sans-serif;
+	font-size: 16px;
+	line-height: 1.5;
+	background-color: var(--color-bg);
+	color: var(--color-text);
+	-webkit-font-smoothing: antialiased;
+}
+
+a {
+	color: var(--color-accent);
+	text-decoration: none;
+	transition: color var(--transition-fast);
+}
+
+a:hover {
+	color: var(--color-accent-hover);
+}
+
+button {
+	font-family: inherit;
+	cursor: pointer;
+}
+
+:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+
+::selection {
+	background-color: var(--color-accent-muted);
+	color: var(--color-text);
+}
+
+.ico {
+	display: inline-block;
+	width: 16px;
+	height: 16px;
+	flex-shrink: 0;
+}
+
+.theme-ico-system,
+.theme-ico-light,
+.theme-ico-dark {
+	display: none;
+}
+
+[data-theme-mode="system"] .theme-ico-system,
+[data-theme-mode="light"] .theme-ico-light,
+[data-theme-mode="dark"] .theme-ico-dark {
+	display: inline-block;
+}
+
+.container {
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+}
+
+.visually-hidden:not(:focus):not(:active) {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.skip-link {
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: 200;
+	margin: var(--spacing-sm);
+	padding: var(--spacing-sm) var(--spacing-md);
+	background: var(--color-bg-elevated);
+	color: var(--color-text);
+	border: 1px solid var(--color-accent);
+	border-radius: var(--radius-sm);
+	transform: translateY(-200%);
+	transition: transform var(--transition-fast);
+}
+
+.skip-link:focus {
+	transform: translateY(0);
+}
+
+main:focus {
+	outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+@media (prefers-contrast: more) {
+	:root,
+	[data-theme="light"] {
+		--color-text-muted: var(--color-text-secondary);
+	}
+}
+
+@media (forced-colors: active) {
+	:focus-visible {
+		outline: 2px solid Highlight;
+	}
+	.skip-link {
+		background: Canvas;
+		color: CanvasText;
+	}
+}

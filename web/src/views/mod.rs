@@ -1,0 +1,22 @@
+mod commands;
+mod dashboard;
+mod error;
+mod faq;
+mod features;
+mod guild_config;
+mod landing;
+mod layout;
+mod owner;
+mod privacy;
+mod tos;
+
+pub use commands::commands;
+pub use dashboard::dashboard;
+pub use error::error_page;
+pub use faq::faq;
+pub use features::features;
+pub use guild_config::guild_config;
+pub use landing::landing;
+pub use owner::owner;
+pub use privacy::privacy;
+pub use tos::tos;

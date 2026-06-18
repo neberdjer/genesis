@@ -1,0 +1,80 @@
+name: web
+
+on:
+  push:
+    branches: ['**']
+    tags: ['[0-9]*']
+
+env:
+  CARGO_HOME: ${{ github.workspace }}/web/.cargo
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    runs-on: docker
+    container:
+      image: rust:1.95
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq nodejs git
+      - uses: actions/checkout@v4
+      - run: rustup component add rustfmt
+      - run: cargo fmt --check --verbose
+        working-directory: web
+
+  clippy:
+    runs-on: docker
+    container:
+      image: rust:1.95
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq nodejs git
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            web/.cargo
+            web/target
+          key: web-clippy-${{ hashFiles('web/Cargo.lock') }}
+          restore-keys: web-clippy-
+      - run: rustup component add clippy
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: web
+
+  docker-build:
+    needs: [fmt, clippy]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: privileged
+    container:
+      image: docker:cli
+    steps:
+      - run: apk add --no-cache nodejs git
+      - uses: actions/checkout@v4
+      - name: Validate tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          case "$REF_NAME" in
+            *[!A-Za-z0-9._-]*|"")
+              echo "Refusing tag with unsafe characters: $REF_NAME" >&2
+              exit 1
+              ;;
+          esac
+      - name: Login
+        env:
+          REGISTRY: ${{ vars.DOCKER_REGISTRY }}
+          USERNAME: ${{ secrets.DOCKER_REGISTRY_USER }}
+          TOKEN: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
+        run: |
+          echo "$TOKEN" | docker login -u "$USERNAME" --password-stdin "$REGISTRY"
+      - name: Build
+        env:
+          IMAGE: ${{ vars.WEB_IMAGE_NAME }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          docker build -t "$IMAGE:$REF_NAME" -t "$IMAGE:latest" web
+      - name: Push
+        env:
+          IMAGE: ${{ vars.WEB_IMAGE_NAME }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          docker push "$IMAGE:$REF_NAME"
+          docker push "$IMAGE:latest"
