@@ -225,17 +225,7 @@ async fn send_paginated_diff(
             message_builder.components(vec![serenity::CreateComponent::ActionRow(buttons)]);
     }
 
-    match msg
-        .channel_id
-        .send_message(&ctx.http, message_builder)
-        .await
-    {
-        Ok(_) => true,
-        Err(e) => {
-            error!("Failed to send diff message: {}", e);
-            false
-        }
-    }
+    shared::send_reply(ctx, msg, message_builder).await
 }
 
 pub async fn handle_commit_diffs(

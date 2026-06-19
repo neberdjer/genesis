@@ -21,6 +21,7 @@ const SERVICES: &[&str] = &[
         "toggle",
         "command",
         "commands",
+        "reply_cleanup",
         "block_domain",
         "unblock_domain",
         "blocked_domains"
@@ -32,10 +33,38 @@ pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
          - `/settings toggle` - enable or disable an auto-embed service\n\
          - `/settings command` - enable or disable a command in this server\n\
          - `/settings commands` - list commands disabled in this server\n\
+         - `/settings reply_cleanup` - delete a bot reply if a mod removes the original message\n\
          - `/settings block_domain` - block a domain in this server\n\
          - `/settings unblock_domain` - unblock a domain in this server\n\
          - `/settings blocked_domains` - list blocked domains in this server",
     )
+    .await?;
+    Ok(())
+}
+
+/// Delete a bot reply if a moderator removes the original message (within a minute)
+#[poise::command(slash_command, guild_only, required_permissions = "ADMINISTRATOR")]
+async fn reply_cleanup(
+    ctx: Context<'_>,
+    #[description = "True to enable, False to disable"] enabled: bool,
+) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("This command can only be used in a server.")?;
+
+    db::update_server_setting(
+        &ctx.data().pool,
+        &guild_id.to_string(),
+        "reply_cleanup",
+        enabled,
+    )
+    .await?;
+
+    let status = if enabled { "enabled" } else { "disabled" };
+    ctx.say(format!(
+        "Reply cleanup is now **{}** in this server.",
+        status
+    ))
     .await?;
     Ok(())
 }

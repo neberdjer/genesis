@@ -1,0 +1,1 @@
+ALTER TABLE server_settings ADD COLUMN IF NOT EXISTS reply_cleanup_enabled BOOLEAN NOT NULL DEFAULT FALSE;

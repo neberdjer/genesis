@@ -5,6 +5,7 @@ pub const TRUNCATED_MESSAGE_LIMIT: usize = 1950;
 pub const DEFAULT_PREFIX: &str = "!";
 pub const DEFAULT_ENVIRONMENT: &str = "prod";
 pub const STATUS_POLL_SECONDS: u64 = 20;
+pub const REPLY_WATCH_SECONDS: u64 = 60;
 pub const DEFAULT_STATUS_TYPE: &str = "watching";
 pub const DEFAULT_STATUS_TEXT: &str = "you";
 pub const DEFAULT_ONLINE_STATUS: &str = "online";

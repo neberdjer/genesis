@@ -1,6 +1,7 @@
 pub(crate) mod git_diff_handler;
 pub(crate) mod git_handler;
 pub(crate) mod instagram_handler;
+pub(crate) mod reply_watch;
 pub(crate) mod shared;
 pub(crate) mod tiktok_handler;
 pub(crate) mod twitter_handler;

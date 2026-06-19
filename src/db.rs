@@ -14,6 +14,7 @@ pub struct ServerSettings {
     pub twitter_enabled: bool,
     pub tiktok_enabled: bool,
     pub instagram_enabled: bool,
+    pub reply_cleanup_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -143,7 +144,7 @@ pub async fn get_server_settings(
 ) -> Result<ServerSettings, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled, tiktok_enabled, instagram_enabled
+        SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled, tiktok_enabled, instagram_enabled, reply_cleanup_enabled
         FROM server_settings
         WHERE guild_id = $1
         "#,
@@ -161,6 +162,7 @@ pub async fn get_server_settings(
             twitter_enabled: row.try_get("twitter_enabled")?,
             tiktok_enabled: row.try_get("tiktok_enabled")?,
             instagram_enabled: row.try_get("instagram_enabled")?,
+            reply_cleanup_enabled: row.try_get("reply_cleanup_enabled")?,
         })
     } else {
         Ok(ServerSettings {
@@ -171,6 +173,7 @@ pub async fn get_server_settings(
             twitter_enabled: true,
             tiktok_enabled: true,
             instagram_enabled: true,
+            reply_cleanup_enabled: false,
         })
     }
 }
@@ -238,6 +241,16 @@ pub async fn update_server_setting(
                 VALUES ($1, $2)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET instagram_enabled = $2, updated_at = NOW()
+                "#,
+        )
+        .bind(guild_id)
+        .bind(enabled),
+        "reply_cleanup" => sqlx::query(
+            r#"
+                INSERT INTO server_settings (guild_id, reply_cleanup_enabled)
+                VALUES ($1, $2)
+                ON CONFLICT (guild_id)
+                DO UPDATE SET reply_cleanup_enabled = $2, updated_at = NOW()
                 "#,
         )
         .bind(guild_id)

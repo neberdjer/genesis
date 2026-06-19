@@ -271,6 +271,8 @@ async fn dashboard(State(state): State<AppState>, jar: PrivateCookieJar) -> Resp
         return Redirect::to("/login").into_response();
     };
 
+    state.spawn_bot_refresh();
+
     match state
         .dashboard_guilds(&session.user.id, &session.access_token)
         .await
@@ -529,6 +531,7 @@ async fn save_settings(
         twitter: form.contains_key("twitter"),
         tiktok: form.contains_key("tiktok"),
         instagram: form.contains_key("instagram"),
+        reply_cleanup: form.contains_key("reply_cleanup"),
         ..db::Settings::defaults()
     };
     match db::set_settings(&state.pool, &guild_id, &settings).await {
@@ -541,6 +544,11 @@ async fn save_settings(
                     (false, true) => off.push(*label),
                     _ => {}
                 }
+            }
+            match (settings.reply_cleanup, old.reply_cleanup) {
+                (true, false) => on.push("reply cleanup"),
+                (false, true) => off.push("reply cleanup"),
+                _ => {}
             }
             if let Some(s) = join_changes(&[("enabled", &on), ("disabled", &off)]) {
                 audit(&state, &guild_id, &session, "services", &s).await;

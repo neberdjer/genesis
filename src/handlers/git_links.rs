@@ -3,7 +3,7 @@ use super::shared::{self, SettingCheck};
 use crate::constants::{DISCORD_MESSAGE_LIMIT, TRUNCATED_MESSAGE_LIMIT};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
-use tracing::{error, warn};
+use tracing::warn;
 
 fn is_git_platform_url(word: &str) -> bool {
     (word.contains("github.com") && word.contains("/blob/"))
@@ -28,19 +28,11 @@ async fn send_code_snippet(ctx: &serenity::Context, msg: &serenity::Message, res
     };
     let content = format!("{}{}", body, footer);
 
-    if let Err(e) = msg
-        .channel_id
-        .send_message(
-            &ctx.http,
-            serenity::CreateMessage::new()
-                .content(content)
-                .reference_message(msg)
-                .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false)),
-        )
-        .await
-    {
-        error!("Failed to send message: {}", e);
-    }
+    let reply = serenity::CreateMessage::new()
+        .content(content)
+        .reference_message(msg)
+        .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
+    shared::send_reply(ctx, msg, reply).await;
 }
 
 pub async fn handle_git_links(

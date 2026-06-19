@@ -138,9 +138,8 @@ pub async fn handle_tiktok_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                match msg.channel_id.send_message(&ctx.http, message).await {
-                    Ok(_) => any_sent = true,
-                    Err(e) => warn!("Failed to send TikTok message: {}", e),
+                if shared::send_reply(ctx, msg, message).await {
+                    any_sent = true;
                 }
             }
             Err(e) => warn!("Failed to fetch TikTok {}: {}", video_url, e),

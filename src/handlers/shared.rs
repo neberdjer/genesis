@@ -70,6 +70,23 @@ pub async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
     let _ = fire_flags_only_suppress(ctx, msg).await;
 }
 
+pub async fn send_reply(
+    ctx: &serenity::Context,
+    msg: &serenity::Message,
+    reply: serenity::CreateMessage<'_>,
+) -> bool {
+    match msg.channel_id.send_message(&ctx.http, reply).await {
+        Ok(sent) => {
+            super::reply_watch::watch(msg.id, sent.id, msg.channel_id, msg.author.id);
+            true
+        }
+        Err(e) => {
+            warn!("Failed to send reply in channel {}: {}", msg.channel_id, e);
+            false
+        }
+    }
+}
+
 pub async fn download_media(url: &str, user_agent: &str) -> Option<Vec<u8>> {
     let url = url.to_string();
     let user_agent = user_agent.to_string();

@@ -57,6 +57,13 @@ impl serenity::EventHandler for Handler {
             serenity::FullEvent::GuildMemberAddition { new_member, .. } => {
                 handle_member_join(ctx, new_member, Some(&data.pool)).await;
             }
+            serenity::FullEvent::MessageDelete {
+                deleted_message_id,
+                guild_id,
+                ..
+            } => {
+                handlers::reply_watch::handle_delete(ctx, *deleted_message_id, *guild_id).await;
+            }
             serenity::FullEvent::Ready { .. } => {
                 static POLLER_STARTED: AtomicBool = AtomicBool::new(false);
                 if !POLLER_STARTED.swap(true, Ordering::SeqCst) {

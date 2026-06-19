@@ -40,6 +40,13 @@ fn services_panel(guild: &DashGuild, settings: &Settings) -> Markup {
                     }
                 }
             }
+
+            label.toggle {
+                input type="checkbox" name="reply_cleanup" checked[settings.reply_cleanup];
+                span { "clean up replies on mod-delete" }
+            }
+            p.field-hint { "if a moderator deletes the original message within a minute, genesis deletes its reply too. requires the bot's view audit log permission." }
+
             span.save-status aria-live="polite" {}
         }
     }
