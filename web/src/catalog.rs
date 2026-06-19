@@ -137,6 +137,10 @@ pub const COMMAND_GROUPS: &[Group] = &[
                 desc: "enable or disable a service in this server",
             },
             Command {
+                usage: "/settings reply_cleanup <enabled>",
+                desc: "delete the bot's reply if a mod removes the original message within a minute",
+            },
+            Command {
                 usage: "/settings block_domain <domain>",
                 desc: "block a domain in this server",
             },
