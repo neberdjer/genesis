@@ -1,6 +1,6 @@
 use super::layout::layout;
-use crate::catalog::COMMAND_GROUPS;
 use crate::config::Config;
+use crate::db::Analytics;
 use crate::discord::{AppStats, User};
 use maud::{Markup, html};
 
@@ -41,11 +41,10 @@ pub fn landing(
     config: &Config,
     stats: Option<AppStats>,
     users: Option<u64>,
-    commands_run: Option<u64>,
+    analytics: Option<Analytics>,
     user: Option<&User>,
     deleted: Option<&str>,
 ) -> Markup {
-    let commands: usize = COMMAND_GROUPS.iter().map(|g| g.commands.len()).sum();
     let num = |n: Option<u64>| n.map(fmt_count).unwrap_or_else(|| "…".to_string());
 
     let body = html! {
@@ -74,8 +73,8 @@ pub fn landing(
                 (stat(num(stats.map(|s| s.guild_count)), "servers"))
                 (stat(num(users), "users"))
                 (stat(num(stats.map(|s| s.user_install_count)), "user installs"))
-                (stat(fmt_count(commands as u64), "commands"))
-                (stat(num(commands_run), "commands run"))
+                (stat(num(analytics.map(|a| a.embeds)), "links fixed"))
+                (stat(num(analytics.map(|a| a.commands_run)), "commands run"))
             }
         }
     };

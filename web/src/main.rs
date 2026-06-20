@@ -44,8 +44,8 @@ struct AppState {
     save_hits: Arc<tokio::sync::Mutex<HashMap<String, Vec<Instant>>>>,
     bot_guilds_detailed: BotGuildDetailCache,
     bot_guilds_detailed_refreshing: Arc<AtomicBool>,
-    commands_run: Arc<tokio::sync::Mutex<Option<(Instant, u64)>>>,
-    commands_run_refreshing: Arc<AtomicBool>,
+    analytics: Arc<tokio::sync::Mutex<Option<(Instant, db::Analytics)>>>,
+    analytics_refreshing: Arc<AtomicBool>,
 }
 
 impl axum::extract::FromRef<AppState> for Key {
@@ -89,8 +89,8 @@ async fn main() {
         save_hits: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         bot_guilds_detailed: Arc::new(tokio::sync::Mutex::new(None)),
         bot_guilds_detailed_refreshing: Arc::new(AtomicBool::new(false)),
-        commands_run: Arc::new(tokio::sync::Mutex::new(None)),
-        commands_run_refreshing: Arc::new(AtomicBool::new(false)),
+        analytics: Arc::new(tokio::sync::Mutex::new(None)),
+        analytics_refreshing: Arc::new(AtomicBool::new(false)),
     };
 
     {
@@ -104,7 +104,7 @@ async fn main() {
                 Err(e) => error!("initial bot guild fetch failed: {}", e),
             }
             let _ = warm.app_stats().await;
-            let _ = warm.commands_run().await;
+            let _ = warm.analytics().await;
         });
     }
 
@@ -175,12 +175,12 @@ async fn landing(
         s.guild_count = n as u64;
     }
     let users = state.bot_user_count().await;
-    let commands_run = state.commands_run().await;
+    let analytics = state.analytics().await;
     html(views::landing(
         &state.config,
         stats,
         users,
-        commands_run,
+        analytics,
         session.as_ref().map(|s| &s.user),
         query.get("deleted").map(String::as_str),
     ))
@@ -1256,32 +1256,32 @@ impl AppState {
         stats
     }
 
-    async fn commands_run(&self) -> Option<u64> {
+    async fn analytics(&self) -> Option<db::Analytics> {
         const TTL: Duration = Duration::from_secs(60);
         let (value, stale) = {
-            let guard = self.commands_run.lock().await;
+            let guard = self.analytics.lock().await;
             match guard.as_ref() {
-                Some((fetched, n)) => (Some(*n), fetched.elapsed() >= TTL),
+                Some((fetched, a)) => (Some(*a), fetched.elapsed() >= TTL),
                 None => (None, true),
             }
         };
         if stale {
-            self.spawn_commands_run_refresh();
+            self.spawn_analytics_refresh();
         }
         value
     }
 
-    fn spawn_commands_run_refresh(&self) {
-        if self.commands_run_refreshing.swap(true, Ordering::AcqRel) {
+    fn spawn_analytics_refresh(&self) {
+        if self.analytics_refreshing.swap(true, Ordering::AcqRel) {
             return;
         }
         let pool = self.pool.clone();
-        let cache = Arc::clone(&self.commands_run);
-        let flag = Arc::clone(&self.commands_run_refreshing);
+        let cache = Arc::clone(&self.analytics);
+        let flag = Arc::clone(&self.analytics_refreshing);
         tokio::spawn(async move {
-            match db::count_commands_run(&pool).await {
-                Ok(n) => *cache.lock().await = Some((Instant::now(), n.max(0) as u64)),
-                Err(e) => error!("commands-run refresh failed: {}", e),
+            match db::analytics(&pool).await {
+                Ok(a) => *cache.lock().await = Some((Instant::now(), a)),
+                Err(e) => error!("analytics refresh failed: {}", e),
             }
             flag.store(false, Ordering::Release);
         });

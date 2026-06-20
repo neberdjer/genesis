@@ -198,10 +198,27 @@ pub async fn delete_user_data(pool: &Pool, user_id: &str) -> Result<(), sqlx::Er
     Ok(())
 }
 
-pub async fn count_commands_run(pool: &Pool) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>("SELECT COALESCE(SUM(count), 0)::BIGINT FROM command_analytics")
-        .fetch_one(pool)
-        .await
+#[derive(Clone, Copy)]
+pub struct Analytics {
+    pub commands_run: u64,
+    pub embeds: u64,
+}
+
+pub async fn analytics(pool: &Pool) -> Result<Analytics, sqlx::Error> {
+    let commands_run = sqlx::query_scalar::<_, i64>(
+        "SELECT COALESCE(SUM(count), 0)::BIGINT FROM command_analytics",
+    )
+    .fetch_one(pool)
+    .await?;
+    let embeds = sqlx::query_scalar::<_, i64>(
+        "SELECT COALESCE(SUM(count), 0)::BIGINT FROM embed_analytics WHERE success = TRUE",
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(Analytics {
+        commands_run: commands_run.max(0) as u64,
+        embeds: embeds.max(0) as u64,
+    })
 }
 
 pub async fn list_domains(pool: &Pool, guild_id: &str) -> Result<Vec<String>, sqlx::Error> {
