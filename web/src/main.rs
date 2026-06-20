@@ -43,6 +43,7 @@ struct AppState {
     user_guilds: UserGuildCache,
     save_hits: Arc<tokio::sync::Mutex<HashMap<String, Vec<Instant>>>>,
     bot_guilds_detailed: BotGuildDetailCache,
+    bot_guilds_detailed_refreshing: Arc<AtomicBool>,
     commands_run: Arc<tokio::sync::Mutex<Option<(Instant, u64)>>>,
     commands_run_refreshing: Arc<AtomicBool>,
 }
@@ -87,6 +88,7 @@ async fn main() {
         user_guilds: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         save_hits: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         bot_guilds_detailed: Arc::new(tokio::sync::Mutex::new(None)),
+        bot_guilds_detailed_refreshing: Arc::new(AtomicBool::new(false)),
         commands_run: Arc::new(tokio::sync::Mutex::new(None)),
         commands_run_refreshing: Arc::new(AtomicBool::new(false)),
     };
@@ -94,10 +96,13 @@ async fn main() {
     {
         let warm = state.clone();
         tokio::spawn(async move {
-            if let Err(e) = warm.bot_guild_ids().await {
-                error!("initial bot guild fetch failed: {}", e);
+            match warm.bot_guilds().await {
+                Ok(guilds) => {
+                    let ids: HashSet<String> = guilds.iter().map(|g| g.id.clone()).collect();
+                    *warm.bot_guilds.lock().await = Some((Instant::now(), Arc::new(ids)));
+                }
+                Err(e) => error!("initial bot guild fetch failed: {}", e),
             }
-            let _ = warm.bot_guilds().await;
             let _ = warm.app_stats().await;
             let _ = warm.commands_run().await;
         });
@@ -162,6 +167,7 @@ async fn landing(
     Query(query): Query<HashMap<String, String>>,
 ) -> Html<String> {
     let session = session::read_session(&jar);
+    state.ensure_bot_guilds_fresh(Duration::from_secs(60)).await;
     let mut stats = state.app_stats().await;
     if let Some(s) = stats.as_mut()
         && let Some(n) = state.bot_guild_count().await
@@ -1299,11 +1305,11 @@ impl AppState {
     }
 
     async fn bot_guild_count(&self) -> Option<usize> {
-        self.bot_guilds
+        self.bot_guilds_detailed
             .lock()
             .await
             .as_ref()
-            .map(|(_, ids)| ids.len())
+            .map(|(_, guilds)| guilds.len())
     }
 
     async fn bot_user_count(&self) -> Option<u64> {
@@ -1312,6 +1318,36 @@ impl AppState {
             .await
             .as_ref()
             .map(|(_, guilds)| guilds.iter().map(|g| g.member_count).sum())
+    }
+
+    async fn ensure_bot_guilds_fresh(&self, min_age: Duration) {
+        let stale = {
+            let guard = self.bot_guilds_detailed.lock().await;
+            guard.as_ref().is_none_or(|(t, _)| t.elapsed() >= min_age)
+        };
+        if stale {
+            self.spawn_bot_guilds_refresh();
+        }
+    }
+
+    fn spawn_bot_guilds_refresh(&self) {
+        if self
+            .bot_guilds_detailed_refreshing
+            .swap(true, Ordering::AcqRel)
+        {
+            return;
+        }
+        let http = self.http.clone();
+        let config = Arc::clone(&self.config);
+        let cache = Arc::clone(&self.bot_guilds_detailed);
+        let flag = Arc::clone(&self.bot_guilds_detailed_refreshing);
+        tokio::spawn(async move {
+            match discord::bot_guilds_detailed(&http, &config).await {
+                Ok(guilds) => *cache.lock().await = Some((Instant::now(), Arc::new(guilds))),
+                Err(e) => error!("bot guilds refresh failed: {}", e),
+            }
+            flag.store(false, Ordering::Release);
+        });
     }
 
     async fn refresh_bot_guilds_if_stale(&self, min_age: Duration) {
