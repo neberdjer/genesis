@@ -98,6 +98,10 @@ async fn status_poller(ctx: serenity::Context) {
     }
 }
 
+async fn record_command_usage(ctx: Context<'_>) {
+    db::record_command(&ctx.data().pool, &ctx.command().qualified_name).await;
+}
+
 async fn command_enabled_check(ctx: Context<'_>) -> Result<bool, Error> {
     let name = ctx.command().name.to_string();
     if !TOGGLEABLE_COMMANDS.contains(&name.as_str()) {
@@ -320,6 +324,7 @@ async fn main() -> Result<(), Error> {
             ..Default::default()
         },
         command_check: Some(|ctx| Box::pin(command_enabled_check(ctx))),
+        pre_command: |ctx| Box::pin(record_command_usage(ctx)),
         on_error: |error| Box::pin(on_error(error)),
         ..Default::default()
     };

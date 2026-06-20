@@ -8,7 +8,7 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
         div.legal {
             div.page-intro {
                 h1 { "privacy policy" }
-                p.muted { "last updated 18 june 2026" }
+                p.muted { "last updated 20 june 2026" }
             }
 
             p {
@@ -23,6 +23,11 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
                 "(discord's “message content” permission). this happens in memory, as messages arrive, "
                 "purely to spot links worth re-embedding. message text is never written to a database "
                 "or a log."
+            }
+            p {
+                "if a server turns on reply cleanup, genesis also reads that server's audit log when a "
+                "message it replied to is deleted, only to check whether a moderator rather than the "
+                "original author removed it. this is read on demand and not stored."
             }
 
             h2.faq-section { "what we store" }
@@ -42,12 +47,20 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
                 "can be audited. that is the only place a personal id is recorded."
             }
 
+            h2.faq-section { "usage stats" }
+            p {
+                "genesis keeps anonymous, aggregate counters: how many times each command has been run, "
+                "and how many embeds per platform succeeded or failed. these are plain totals, with no "
+                "link to any user, server, message, or link."
+            }
+
             h2.faq-section { "what we don't store" }
             p {
                 "we do not store message content, the links you post, the media in them, your username, "
                 "or your message history. media is downloaded only long enough to re-upload it to discord "
-                "and is then discarded; the only short-lived cache is a git diff kept in memory for a few "
-                "minutes."
+                "and is then discarded. the only short-lived in-memory state is a git diff cache kept for "
+                "a few minutes and, where reply cleanup is on, a brief list of recent replies (ids only, "
+                "about a minute) so they can be removed if a moderator deletes the original."
             }
 
             h2.faq-section { "the dashboard" }
@@ -75,10 +88,11 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
 
             h2.faq-section { "keeping and removing data" }
             p {
-                "settings stay until they're removed. removing the bot from a server does not by itself "
-                "erase that server's stored settings; to have them deleted, clear them from the dashboard "
-                "or ask us. per-server blocked domains can be removed any time with "
-                code { "/settings unblock_domain" } "."
+                "settings stay until they're removed. from the dashboard you can wipe everything stored "
+                "for a server (its danger zone tab), or delete all data about yourself (the dashboard's "
+                "your-data section); both sign you out when done. removing the bot from a server does not "
+                "by itself erase its settings. per-server blocked domains can also be cleared with "
+                code { "/settings unblock_domain" } ", or you can ask us."
             }
 
             h2.faq-section { "contact" }

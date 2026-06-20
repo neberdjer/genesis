@@ -32,7 +32,7 @@ async fn send_code_snippet(ctx: &serenity::Context, msg: &serenity::Message, res
         .content(content)
         .reference_message(msg)
         .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
-    shared::send_reply(ctx, msg, reply).await;
+    shared::send_reply(ctx, msg, "git_links", reply).await;
 }
 
 pub async fn handle_git_links(
@@ -72,7 +72,10 @@ pub async fn handle_git_links(
                 send_code_snippet(ctx, msg, response).await;
                 any_sent = true;
             }
-            Err(e) => warn!("Failed to fetch git content: {}", e),
+            Err(e) => {
+                warn!("Failed to fetch git content: {}", e);
+                shared::record_embed(ctx, "git_links", false).await;
+            }
         }
     }
 

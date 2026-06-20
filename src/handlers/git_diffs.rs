@@ -210,6 +210,7 @@ async fn send_paginated_diff(
 
     if first_page.len() + footer.len() > DISCORD_MESSAGE_LIMIT {
         warn!("Diff response too long, skipping");
+        shared::record_embed(ctx, "git_diffs", false).await;
         return false;
     }
 
@@ -225,7 +226,7 @@ async fn send_paginated_diff(
             message_builder.components(vec![serenity::CreateComponent::ActionRow(buttons)]);
     }
 
-    shared::send_reply(ctx, msg, message_builder).await
+    shared::send_reply(ctx, msg, "git_diffs", message_builder).await
 }
 
 pub async fn handle_commit_diffs(
@@ -351,6 +352,7 @@ async fn handle_commit_diffs_impl(
             Ok(chunked) => chunked,
             Err(e) => {
                 warn!("Failed to fetch commit diff: {}", e);
+                shared::record_embed(ctx, "git_diffs", false).await;
                 continue;
             }
         };

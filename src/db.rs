@@ -290,6 +290,41 @@ pub async fn list_git_hosts(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
         .await
 }
 
+pub async fn record_command(pool: &PgPool, command: &str) {
+    let result = sqlx::query(
+        r#"
+        INSERT INTO command_analytics (command, count)
+        VALUES ($1, 1)
+        ON CONFLICT (command)
+        DO UPDATE SET count = command_analytics.count + 1, updated_at = NOW()
+        "#,
+    )
+    .bind(command)
+    .execute(pool)
+    .await;
+    if let Err(e) = result {
+        warn!("Failed to record command analytics: {}", e);
+    }
+}
+
+pub async fn record_embed(pool: &PgPool, service: &str, success: bool) {
+    let result = sqlx::query(
+        r#"
+        INSERT INTO embed_analytics (service, success, count)
+        VALUES ($1, $2, 1)
+        ON CONFLICT (service, success)
+        DO UPDATE SET count = embed_analytics.count + 1, updated_at = NOW()
+        "#,
+    )
+    .bind(service)
+    .bind(success)
+    .execute(pool)
+    .await;
+    if let Err(e) = result {
+        warn!("Failed to record embed analytics: {}", e);
+    }
+}
+
 pub async fn is_command_enabled(pool: &PgPool, guild_id: Option<&str>, command: &str) -> bool {
     let mut scopes = vec![crate::constants::COMMAND_SCOPE_GLOBAL.to_string()];
     if let Some(g) = guild_id {

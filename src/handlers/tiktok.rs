@@ -138,11 +138,14 @@ pub async fn handle_tiktok_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                if shared::send_reply(ctx, msg, message).await {
+                if shared::send_reply(ctx, msg, "tiktok", message).await {
                     any_sent = true;
                 }
             }
-            Err(e) => warn!("Failed to fetch TikTok {}: {}", video_url, e),
+            Err(e) => {
+                warn!("Failed to fetch TikTok {}: {}", video_url, e);
+                shared::record_embed(ctx, "tiktok", false).await;
+            }
         }
     }
 

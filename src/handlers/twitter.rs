@@ -153,11 +153,14 @@ pub async fn handle_twitter_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                if shared::send_reply(ctx, msg, message).await {
+                if shared::send_reply(ctx, msg, "twitter", message).await {
                     any_sent = true;
                 }
             }
-            Err(e) => warn!("Failed to fetch tweet {}: {}", url, e),
+            Err(e) => {
+                warn!("Failed to fetch tweet {}: {}", url, e);
+                shared::record_embed(ctx, "twitter", false).await;
+            }
         }
     }
 

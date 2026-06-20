@@ -149,11 +149,14 @@ pub async fn handle_instagram_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                if shared::send_reply(ctx, msg, message).await {
+                if shared::send_reply(ctx, msg, "instagram", message).await {
                     any_sent = true;
                 }
             }
-            Err(e) => warn!("Failed to fetch Instagram {}: {}", url, e),
+            Err(e) => {
+                warn!("Failed to fetch Instagram {}: {}", url, e);
+                shared::record_embed(ctx, "instagram", false).await;
+            }
         }
     }
 

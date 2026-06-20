@@ -65,20 +65,30 @@ pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
         format!("{}s", seconds)
     };
 
+    let installed_users = ctx
+        .http()
+        .get_current_application_info()
+        .await
+        .ok()
+        .and_then(|app| app.approximate_user_install_count)
+        .map_or_else(|| "?".to_string(), |count| count.to_string());
+
     let blacklisted_users = db::count_blacklisted_users(pool).await.unwrap_or(0);
     let blacklisted_servers = db::count_blacklisted_servers(pool).await.unwrap_or(0);
     let configured_servers = db::count_configured_servers(pool).await.unwrap_or(0);
 
     let response = format!(
         "**Genesis Stats**\n\
-         Servers: **{}** | Users: **{}** | Channels: **{}**\n\
+         Servers: **{}** | Channels: **{}**\n\
+         Installed Users: **{}** | Total Guild Users: **{}**\n\
          Uptime: **{}**\n\
          Configured Servers: **{}**\n\
          Blacklisted Users: **{}** | Blacklisted Servers: **{}**\n\
          Version: **{}**",
         guild_count,
-        user_count,
         channel_count,
+        installed_users,
+        user_count,
         uptime_str,
         configured_servers,
         blacklisted_users,

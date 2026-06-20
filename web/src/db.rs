@@ -169,6 +169,41 @@ pub async fn set_settings(
     Ok(())
 }
 
+pub async fn delete_server_data(pool: &Pool, guild_id: &str) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM server_settings WHERE guild_id = $1")
+        .bind(guild_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM guild_blocked_domains WHERE guild_id = $1")
+        .bind(guild_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM command_overrides WHERE scope = $1")
+        .bind(guild_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM config_audit WHERE guild_id = $1")
+        .bind(guild_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await
+}
+
+pub async fn delete_user_data(pool: &Pool, user_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM config_audit WHERE actor_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn count_commands_run(pool: &Pool) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>("SELECT COALESCE(SUM(count), 0)::BIGINT FROM command_analytics")
+        .fetch_one(pool)
+        .await
+}
+
 pub async fn list_domains(pool: &Pool, guild_id: &str) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar::<_, String>(
         "SELECT domain FROM guild_blocked_domains WHERE guild_id = $1 ORDER BY domain",

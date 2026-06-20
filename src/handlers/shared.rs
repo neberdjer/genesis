@@ -70,18 +70,25 @@ pub async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
     let _ = fire_flags_only_suppress(ctx, msg).await;
 }
 
+pub async fn record_embed(ctx: &serenity::Context, service: &str, success: bool) {
+    db::record_embed(&ctx.data::<crate::Data>().pool, service, success).await;
+}
+
 pub async fn send_reply(
     ctx: &serenity::Context,
     msg: &serenity::Message,
+    service: &str,
     reply: serenity::CreateMessage<'_>,
 ) -> bool {
     match msg.channel_id.send_message(&ctx.http, reply).await {
         Ok(sent) => {
             super::reply_watch::watch(msg.id, sent.id, msg.channel_id, msg.author.id);
+            record_embed(ctx, service, true).await;
             true
         }
         Err(e) => {
             warn!("Failed to send reply in channel {}: {}", msg.channel_id, e);
+            record_embed(ctx, service, false).await;
             false
         }
     }

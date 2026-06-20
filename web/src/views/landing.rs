@@ -37,11 +37,27 @@ fn stat(value: String, label: &str) -> Markup {
     }
 }
 
-pub fn landing(config: &Config, stats: Option<AppStats>, user: Option<&User>) -> Markup {
+pub fn landing(
+    config: &Config,
+    stats: Option<AppStats>,
+    users: Option<u64>,
+    commands_run: Option<u64>,
+    user: Option<&User>,
+    deleted: Option<&str>,
+) -> Markup {
     let commands: usize = COMMAND_GROUPS.iter().map(|g| g.commands.len()).sum();
     let num = |n: Option<u64>| n.map(fmt_count).unwrap_or_else(|| "…".to_string());
 
     let body = html! {
+        @if let Some(kind) = deleted {
+            div.success-message role="status" {
+                @if kind == "server" {
+                    "the server's data has been deleted, and you've been signed out."
+                } @else {
+                    "your data has been deleted, and you've been signed out."
+                }
+            }
+        }
         section.hero {
             img.hero-logo src="/static/logo.svg" alt="";
             h1 { "fixes broken social media embeds in discord" }
@@ -56,8 +72,10 @@ pub fn landing(config: &Config, stats: Option<AppStats>, user: Option<&User>) ->
         section.section {
             div.stat-grid {
                 (stat(num(stats.map(|s| s.guild_count)), "servers"))
+                (stat(num(users), "users"))
                 (stat(num(stats.map(|s| s.user_install_count)), "user installs"))
                 (stat(fmt_count(commands as u64), "commands"))
+                (stat(num(commands_run), "commands run"))
             }
         }
     };

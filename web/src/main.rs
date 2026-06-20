@@ -43,6 +43,8 @@ struct AppState {
     user_guilds: UserGuildCache,
     save_hits: Arc<tokio::sync::Mutex<HashMap<String, Vec<Instant>>>>,
     bot_guilds_detailed: BotGuildDetailCache,
+    commands_run: Arc<tokio::sync::Mutex<Option<(Instant, u64)>>>,
+    commands_run_refreshing: Arc<AtomicBool>,
 }
 
 impl axum::extract::FromRef<AppState> for Key {
@@ -85,6 +87,8 @@ async fn main() {
         user_guilds: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         save_hits: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         bot_guilds_detailed: Arc::new(tokio::sync::Mutex::new(None)),
+        commands_run: Arc::new(tokio::sync::Mutex::new(None)),
+        commands_run_refreshing: Arc::new(AtomicBool::new(false)),
     };
 
     {
@@ -93,7 +97,9 @@ async fn main() {
             if let Err(e) = warm.bot_guild_ids().await {
                 error!("initial bot guild fetch failed: {}", e);
             }
+            let _ = warm.bot_guilds().await;
             let _ = warm.app_stats().await;
+            let _ = warm.commands_run().await;
         });
     }
 
@@ -117,6 +123,8 @@ async fn main() {
         .route("/dashboard/{guild_id}/welcome", post(save_welcome))
         .route("/dashboard/{guild_id}/domains", post(save_domains))
         .route("/dashboard/{guild_id}/commands", post(save_commands))
+        .route("/dashboard/{guild_id}/delete", post(delete_server))
+        .route("/account/delete", post(delete_account))
         .route("/owner", get(owner_page))
         .route("/owner/blacklist/user/add", post(owner_user_add))
         .route("/owner/blacklist/user/remove", post(owner_user_remove))
@@ -148,18 +156,27 @@ fn html(markup: maud::Markup) -> Html<String> {
     Html(markup.into_string())
 }
 
-async fn landing(State(state): State<AppState>, jar: PrivateCookieJar) -> Html<String> {
+async fn landing(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Query(query): Query<HashMap<String, String>>,
+) -> Html<String> {
     let session = session::read_session(&jar);
     let mut stats = state.app_stats().await;
     if let Some(s) = stats.as_mut()
-        && let Ok(ids) = state.bot_guild_ids().await
+        && let Some(n) = state.bot_guild_count().await
     {
-        s.guild_count = ids.len() as u64;
+        s.guild_count = n as u64;
     }
+    let users = state.bot_user_count().await;
+    let commands_run = state.commands_run().await;
     html(views::landing(
         &state.config,
         stats,
+        users,
+        commands_run,
         session.as_ref().map(|s| &s.user),
+        query.get("deleted").map(String::as_str),
     ))
 }
 
@@ -266,12 +283,50 @@ async fn invite(State(state): State<AppState>) -> Redirect {
     Redirect::to(&state.config.invite_url())
 }
 
+async fn delete_server(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Path(guild_id): Path<String>,
+) -> Response {
+    let Some(session) = session::read_session(&jar) else {
+        return Redirect::to("/login").into_response();
+    };
+    let access = load_guild(&state, &session, &guild_id).await;
+    if let Some(resp) = deny_mutation(&access, &session, &format!("/dashboard/{}", guild_id)) {
+        return resp;
+    }
+    if let Err(e) = db::delete_server_data(&state.pool, &guild_id).await {
+        error!("delete_server_data failed: {}", e);
+    }
+    (
+        session::clear_session(jar),
+        Redirect::to("/?deleted=server"),
+    )
+        .into_response()
+}
+
+async fn delete_account(State(state): State<AppState>, jar: PrivateCookieJar) -> Response {
+    let Some(session) = session::read_session(&jar) else {
+        return Redirect::to("/login").into_response();
+    };
+    if let Err(e) = db::delete_user_data(&state.pool, &session.user.id).await {
+        error!("delete_user_data failed: {}", e);
+    }
+    (
+        session::clear_session(jar),
+        Redirect::to("/?deleted=account"),
+    )
+        .into_response()
+}
+
 async fn dashboard(State(state): State<AppState>, jar: PrivateCookieJar) -> Response {
     let Some(session) = session::read_session(&jar) else {
         return Redirect::to("/login").into_response();
     };
 
-    state.spawn_bot_refresh();
+    state
+        .refresh_bot_guilds_if_stale(Duration::from_secs(30))
+        .await;
 
     match state
         .dashboard_guilds(&session.user.id, &session.access_token)
@@ -342,6 +397,7 @@ async fn guild_config(
         Some("welcome") => "welcome",
         Some("domains") => "domains",
         Some("audit") => "audit",
+        Some("danger") => "danger",
         _ => "services",
     };
     let (saved, jar) = session::take_saved(jar);
@@ -1194,6 +1250,37 @@ impl AppState {
         stats
     }
 
+    async fn commands_run(&self) -> Option<u64> {
+        const TTL: Duration = Duration::from_secs(60);
+        let (value, stale) = {
+            let guard = self.commands_run.lock().await;
+            match guard.as_ref() {
+                Some((fetched, n)) => (Some(*n), fetched.elapsed() >= TTL),
+                None => (None, true),
+            }
+        };
+        if stale {
+            self.spawn_commands_run_refresh();
+        }
+        value
+    }
+
+    fn spawn_commands_run_refresh(&self) {
+        if self.commands_run_refreshing.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let pool = self.pool.clone();
+        let cache = Arc::clone(&self.commands_run);
+        let flag = Arc::clone(&self.commands_run_refreshing);
+        tokio::spawn(async move {
+            match db::count_commands_run(&pool).await {
+                Ok(n) => *cache.lock().await = Some((Instant::now(), n.max(0) as u64)),
+                Err(e) => error!("commands-run refresh failed: {}", e),
+            }
+            flag.store(false, Ordering::Release);
+        });
+    }
+
     fn spawn_app_stats_refresh(&self) {
         if self.app_stats_refreshing.swap(true, Ordering::AcqRel) {
             return;
@@ -1209,6 +1296,32 @@ impl AppState {
             }
             flag.store(false, Ordering::Release);
         });
+    }
+
+    async fn bot_guild_count(&self) -> Option<usize> {
+        self.bot_guilds
+            .lock()
+            .await
+            .as_ref()
+            .map(|(_, ids)| ids.len())
+    }
+
+    async fn bot_user_count(&self) -> Option<u64> {
+        self.bot_guilds_detailed
+            .lock()
+            .await
+            .as_ref()
+            .map(|(_, guilds)| guilds.iter().map(|g| g.member_count).sum())
+    }
+
+    async fn refresh_bot_guilds_if_stale(&self, min_age: Duration) {
+        let stale = {
+            let guard = self.bot_guilds.lock().await;
+            guard.as_ref().is_none_or(|(t, _)| t.elapsed() >= min_age)
+        };
+        if stale {
+            self.spawn_bot_refresh();
+        }
     }
 
     fn spawn_bot_refresh(&self) {

@@ -587,3 +587,20 @@
 	font-size: var(--text-sm);
 	line-height: 1.5;
 }
+
+.danger-zone {
+	margin-top: var(--spacing-2xl);
+	padding-top: var(--spacing-lg);
+	border-top: 1px solid var(--color-border);
+}
+
+.danger-zone h2 {
+	font-size: var(--text-lg);
+	font-weight: var(--font-semibold);
+	margin: 0 0 var(--spacing-xs);
+}
+
+.danger-zone p {
+	margin: 0 0 var(--spacing-md);
+	max-width: 60ch;
+}

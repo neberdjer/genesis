@@ -49,6 +49,19 @@ pub fn dashboard(user: &User, guilds: &[DashGuild], config: &Config, is_owner: b
         @if guilds.is_empty() {
             p.muted { "no servers found." }
         }
+
+        section.danger-zone {
+            h2 { "your data" }
+            p.muted {
+                "delete everything genesis has recorded about you: your dashboard change history "
+                "across every server. this signs you out and cannot be undone. it does not change "
+                "your servers' settings."
+            }
+            form method="post" action="/account/delete"
+                onsubmit="return confirm('delete all data about you and sign out? this cannot be undone.')" {
+                button.btn.danger type="submit" { "delete my data" }
+            }
+        }
     };
     layout("dashboard", "dashboard", Some(user), body)
 }

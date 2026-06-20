@@ -11,6 +11,7 @@ const TABS: &[(&str, &str)] = &[
     ("welcome", "welcome"),
     ("domains", "blocked domains"),
     ("audit", "audit log"),
+    ("danger", "danger zone"),
 ];
 
 fn tabs(guild_id: &str, active: &str) -> Markup {
@@ -199,6 +200,20 @@ fn audit_panel(entries: &[AuditEntry], guild_id: &str, page: usize, total_pages:
     }
 }
 
+fn danger_panel(guild: &DashGuild) -> Markup {
+    html! {
+        p.muted {
+            "permanently delete everything genesis stores for this server: its services, blocked "
+            "domains, command settings, welcome message, and change history. this cannot be undone."
+        }
+        p.muted { "you'll be signed out once it's done." }
+        form method="post" action=(format!("/dashboard/{}/delete", guild.id))
+            onsubmit="return confirm('delete all stored data for this server? this cannot be undone.')" {
+            button.btn.danger type="submit" { "delete all data for this server" }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn guild_config(
     user: &User,
@@ -236,6 +251,7 @@ pub fn guild_config(
                 "welcome" => (welcome_panel(guild, settings, channels, roles)),
                 "domains" => (domains_panel(guild, domains, git_hosts)),
                 "audit" => (audit_panel(audit, &guild.id, audit_page, audit_total_pages)),
+                "danger" => (danger_panel(guild)),
                 _ => (services_panel(guild, settings)),
             }
         }

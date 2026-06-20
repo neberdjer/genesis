@@ -137,6 +137,14 @@ pub const COMMAND_GROUPS: &[Group] = &[
                 desc: "enable or disable a service in this server",
             },
             Command {
+                usage: "/settings command <command> <enabled>",
+                desc: "enable or disable a command in this server",
+            },
+            Command {
+                usage: "/settings commands",
+                desc: "list commands disabled in this server",
+            },
+            Command {
                 usage: "/settings reply_cleanup <enabled>",
                 desc: "delete the bot's reply if a mod removes the original message within a minute",
             },

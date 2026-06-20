@@ -8,7 +8,7 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
         div.legal {
             div.page-intro {
                 h1 { "terms of service" }
-                p.muted { "last updated 18 june 2026" }
+                p.muted { "last updated 20 june 2026" }
             }
 
             p {
@@ -35,6 +35,10 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
                 }
                 li { "optional welcome messages and an auto-assigned role for new members." }
                 li {
+                    "optional reply cleanup: if a moderator deletes your original message within a minute, "
+                    "genesis removes its own reply to it as well."
+                }
+                li {
                     "moderation commands (" code { "/ban" } ", " code { "/kick" } ") for users who already "
                     "hold the matching discord permissions."
                 }
@@ -59,8 +63,9 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
             h2.faq-section { "permissions" }
             p {
                 "genesis needs to read and send messages, embed links, and attach files. it uses “manage "
-                "messages” to hide the preview on your original link and “manage roles” for welcome roles. "
-                "without a permission, the related feature simply doesn't run."
+                "messages” to hide the preview on your original link, “manage roles” for welcome roles, "
+                "and “view audit log” for the optional reply-cleanup feature. without a permission, the "
+                "related feature simply doesn't run."
             }
 
             h2.faq-section { "enforcement" }
