@@ -514,27 +514,20 @@ impl InstagramPost {
             .and_then(|e| e.as_array())
         {
             for edge in edges {
-                if let Some(node) = edge.get("node")
-                    && let Some(url) = Self::best_media_url(node)
-                {
-                    media.push(url);
-                } else {
-                    warn!("Sidecar child produced no URL");
+                let node = edge.get("node").unwrap_or(edge);
+                match Self::media_url_for_node(node)? {
+                    Some(url) => media.push(url),
+                    None => warn!("Sidecar child produced no URL"),
                 }
             }
         } else if let Some(carousel) = item.get("carousel_media").and_then(|c| c.as_array()) {
             for child in carousel {
-                if let Some(url) = Self::best_media_url(child) {
-                    media.push(url);
+                match Self::media_url_for_node(child)? {
+                    Some(url) => media.push(url),
+                    None => warn!("Carousel child produced no URL"),
                 }
             }
-        } else if let Some(url) = item
-            .get("video_url")
-            .or_else(|| item.get("display_url"))
-            .and_then(|u| u.as_str())
-        {
-            media.push(url.to_string());
-        } else if let Some(url) = Self::best_media_url(item) {
+        } else if let Some(url) = Self::media_url_for_node(item)? {
             media.push(url);
         }
 
@@ -594,11 +587,12 @@ impl InstagramPost {
 
         if let Some(carousel) = item.get("carousel_media").and_then(|c| c.as_array()) {
             for child in carousel {
-                if let Some(url) = Self::best_media_url(child) {
-                    media.push(url);
+                match Self::media_url_for_node(child)? {
+                    Some(url) => media.push(url),
+                    None => warn!("Carousel child produced no URL"),
                 }
             }
-        } else if let Some(url) = Self::best_media_url(item) {
+        } else if let Some(url) = Self::media_url_for_node(item)? {
             media.push(url);
         }
 
@@ -620,6 +614,30 @@ impl InstagramPost {
             text: caption,
             media,
         })
+    }
+
+    fn media_url_for_node(
+        node: &Value,
+    ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+        let typename = node
+            .get("__typename")
+            .and_then(|t| t.as_str())
+            .unwrap_or("");
+        let is_video = node
+            .get("is_video")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+            || node.get("media_type").and_then(|m| m.as_i64()) == Some(2)
+            || matches!(typename, "GraphVideo" | "XDTGraphVideo");
+        let has_video_url = node.get("video_url").and_then(|u| u.as_str()).is_some()
+            || node
+                .get("video_versions")
+                .and_then(|v| v.as_array())
+                .is_some_and(|a| !a.is_empty());
+        if is_video && !has_video_url {
+            return Err("Video item returned without a video URL".into());
+        }
+        Ok(Self::best_media_url(node))
     }
 
     fn best_media_url(item: &Value) -> Option<String> {
