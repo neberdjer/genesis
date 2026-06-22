@@ -41,6 +41,7 @@ pub async fn instagram(
         Ok(post) => post,
         Err(e) => {
             tracing::warn!("Failed to fetch Instagram post via slash command: {}", e);
+            crate::db::record_embed(&ctx.data().pool, "instagram", false).await;
             ctx.send(
                 CreateReply::default()
                     .content("Failed to fetch the Instagram post.")
@@ -60,6 +61,7 @@ pub async fn instagram(
         reply = reply.attachment(attachment);
     }
     ctx.send(reply).await?;
+    crate::db::record_embed(&ctx.data().pool, "instagram", true).await;
 
     Ok(())
 }
@@ -96,6 +98,7 @@ pub async fn twitter(
         Ok(post) => post,
         Err(e) => {
             tracing::warn!("Failed to fetch tweet via slash command: {}", e);
+            crate::db::record_embed(&ctx.data().pool, "twitter", false).await;
             ctx.send(
                 CreateReply::default()
                     .content("Failed to fetch the tweet.")
@@ -115,6 +118,7 @@ pub async fn twitter(
         reply = reply.attachment(attachment);
     }
     ctx.send(reply).await?;
+    crate::db::record_embed(&ctx.data().pool, "twitter", true).await;
 
     Ok(())
 }
@@ -151,6 +155,7 @@ pub async fn tiktok(
         Ok(post) => post,
         Err(e) => {
             tracing::warn!("Failed to fetch TikTok via slash command: {}", e);
+            crate::db::record_embed(&ctx.data().pool, "tiktok", false).await;
             ctx.send(
                 CreateReply::default()
                     .content("Failed to fetch the TikTok post.")
@@ -170,6 +175,7 @@ pub async fn tiktok(
         reply = reply.attachment(attachment);
     }
     ctx.send(reply).await?;
+    crate::db::record_embed(&ctx.data().pool, "tiktok", true).await;
 
     Ok(())
 }

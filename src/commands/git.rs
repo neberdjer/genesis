@@ -62,6 +62,7 @@ async fn send_file(ctx: Context<'_>, link: GitFileLink) -> Result<(), Error> {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!("Failed to fetch git file via slash command: {}", e);
+            db::record_embed(&ctx.data().pool, "git_links", false).await;
             return deny(ctx, "Failed to fetch that file.").await;
         }
     };
@@ -82,6 +83,7 @@ async fn send_file(ctx: Context<'_>, link: GitFileLink) -> Result<(), Error> {
             .allowed_mentions(serenity::CreateAllowedMentions::new()),
     )
     .await?;
+    db::record_embed(&ctx.data().pool, "git_links", true).await;
 
     Ok(())
 }
@@ -100,9 +102,13 @@ async fn send_diff(ctx: Context<'_>, commit: CommitDiff, only_me: bool) -> Resul
 
     let chunked = match git_diffs::fetch_or_cached(&commit).await {
         Ok(c) if !c.is_empty() => c,
-        Ok(_) => return deny(ctx, "No diff content was returned.").await,
+        Ok(_) => {
+            db::record_embed(&ctx.data().pool, "git_diffs", false).await;
+            return deny(ctx, "No diff content was returned.").await;
+        }
         Err(e) => {
             tracing::warn!("Failed to fetch commit diff via slash command: {}", e);
+            db::record_embed(&ctx.data().pool, "git_diffs", false).await;
             return deny(ctx, "Failed to fetch that commit diff.").await;
         }
     };
@@ -112,6 +118,7 @@ async fn send_diff(ctx: Context<'_>, commit: CommitDiff, only_me: bool) -> Resul
     let first_page = &chunked[0];
 
     if first_page.len() + footer.len() > DISCORD_MESSAGE_LIMIT {
+        db::record_embed(&ctx.data().pool, "git_diffs", false).await;
         return deny(ctx, "Diff response too long to display.").await;
     }
 
@@ -127,6 +134,7 @@ async fn send_diff(ctx: Context<'_>, commit: CommitDiff, only_me: bool) -> Resul
     }
 
     ctx.send(reply).await?;
+    db::record_embed(&ctx.data().pool, "git_diffs", true).await;
 
     Ok(())
 }
