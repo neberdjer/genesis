@@ -312,6 +312,8 @@ textarea:focus {
 
 .idlist-id {
 	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	overflow-wrap: anywhere;
+	min-width: 0;
 }
 
 .idlist-reason {

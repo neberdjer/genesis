@@ -254,14 +254,20 @@
 
 @media (max-width: 640px) {
 	.header-inner {
-		flex-wrap: wrap;
+		flex-direction: column;
+		align-items: center;
 		gap: var(--spacing-sm);
 		padding: var(--spacing-sm) var(--spacing-md);
 	}
 
 	.header-left {
-		flex-wrap: wrap;
-		gap: var(--spacing-xs) var(--spacing-md);
+		flex-direction: column;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.brand-link span {
+		display: none;
 	}
 
 	.nav {
@@ -272,7 +278,21 @@
 		content: none;
 	}
 
-	.header-actions {
-		margin-left: auto;
+	.user-dropdown {
+		right: auto;
+		left: 50%;
+		transform: translateX(-50%);
+	}
+
+	.main {
+		padding: var(--spacing-xl) var(--spacing-md);
+	}
+
+	.server-row {
+		flex-wrap: wrap;
+	}
+
+	.server-row-name {
+		flex-basis: 100%;
 	}
 }
