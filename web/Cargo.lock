@@ -526,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "genesis-web"
-version = "0.2.5"
+version = "0.2.7"
 dependencies = [
  "axum",
  "axum-extra",
