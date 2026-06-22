@@ -136,6 +136,7 @@ pub async fn handle_instagram_links(
     }
 
     let mut any_sent = false;
+    let mut any_failed = false;
     for url in found_urls {
         debug!("Fetching Instagram post: url={}", url);
         let url_owned = url.clone();
@@ -151,16 +152,22 @@ pub async fn handle_instagram_links(
 
                 if shared::send_reply(ctx, msg, "instagram", message).await {
                     any_sent = true;
+                } else {
+                    any_failed = true;
                 }
             }
             Err(e) => {
                 warn!("Failed to fetch Instagram {}: {}", url, e);
                 shared::record_embed(ctx, "instagram", false).await;
+                any_failed = true;
             }
         }
     }
 
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
+    }
+    if any_failed {
+        shared::react_failure(ctx, msg).await;
     }
 }

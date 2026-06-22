@@ -125,6 +125,7 @@ pub async fn handle_tiktok_links(
     }
 
     let mut any_sent = false;
+    let mut any_failed = false;
     for video_url in found_videos {
         debug!("Fetching TikTok: url={}", video_url);
         let url = video_url.clone();
@@ -140,16 +141,22 @@ pub async fn handle_tiktok_links(
 
                 if shared::send_reply(ctx, msg, "tiktok", message).await {
                     any_sent = true;
+                } else {
+                    any_failed = true;
                 }
             }
             Err(e) => {
                 warn!("Failed to fetch TikTok {}: {}", video_url, e);
                 shared::record_embed(ctx, "tiktok", false).await;
+                any_failed = true;
             }
         }
     }
 
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
+    }
+    if any_failed {
+        shared::react_failure(ctx, msg).await;
     }
 }

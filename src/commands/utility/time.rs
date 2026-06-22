@@ -1,3 +1,4 @@
+use crate::commands::deny;
 use crate::{Context, Error};
 use chrono::{DateTime, FixedOffset, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
@@ -141,27 +142,38 @@ pub async fn time(
 ) -> Result<(), Error> {
     let time_trimmed = time.trim();
     let from_tz_str = from_tz.as_deref().unwrap_or("UTC").trim();
-    let source_tz = parse_timezone(from_tz_str)?;
-
-    let target_timezones: Vec<TimezoneType> = if let Some(tz_list) = to_tz {
-        tz_list
-            .split(',')
-            .map(|s| parse_timezone(s.trim()))
-            .collect::<Result<Vec<_>, _>>()?
-    } else {
-        vec![parse_timezone("UTC")?]
+    let source_tz = match parse_timezone(from_tz_str) {
+        Ok(tz) => tz,
+        Err(e) => return deny(ctx, &e.to_string()).await,
     };
+
+    let mut target_timezones: Vec<TimezoneType> = Vec::new();
+    if let Some(tz_list) = to_tz {
+        for name in tz_list.split(',') {
+            match parse_timezone(name.trim()) {
+                Ok(tz) => target_timezones.push(tz),
+                Err(e) => return deny(ctx, &e.to_string()).await,
+            }
+        }
+    } else if let Ok(tz) = parse_timezone("UTC") {
+        target_timezones.push(tz);
+    }
 
     let utc_time = if time_trimmed.to_lowercase() == "now" {
         Utc::now()
     } else {
-        let naive_time = NaiveTime::parse_from_str(time_trimmed, "%H:%M")
+        let Ok(naive_time) = NaiveTime::parse_from_str(time_trimmed, "%H:%M")
             .or_else(|_| NaiveTime::parse_from_str(time_trimmed, "%H:%M:%S"))
-            .map_err(|_| "Invalid time format. Use HH:MM or HH:MM:SS.")?;
+        else {
+            return deny(ctx, "Invalid time format. Use HH:MM or HH:MM:SS.").await;
+        };
 
         let today = Local::now().date_naive();
         let naive_datetime = today.and_time(naive_time);
-        source_tz.to_utc(&naive_datetime)?
+        match source_tz.to_utc(&naive_datetime) {
+            Ok(t) => t,
+            Err(e) => return deny(ctx, &e.to_string()).await,
+        }
     };
 
     let (source_date, source_time_str) = source_tz.convert(&utc_time);

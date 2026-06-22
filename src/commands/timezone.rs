@@ -94,6 +94,8 @@ pub async fn timezone(
     let target_name = target.display_name().to_string();
     let caller_id = ctx.author().id;
 
+    ctx.defer().await?;
+
     let target_data = match lookup(target_id.get()).await {
         LookupResult::Found(d) => d,
         LookupResult::NotRegistered => {

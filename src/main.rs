@@ -116,18 +116,47 @@ async fn command_enabled_check(ctx: Context<'_>) -> Result<bool, Error> {
     let _ = ctx
         .send(
             poise::CreateReply::default()
-                .content("That command is disabled here.")
+                .content("This command has been disabled in this server by an administrator.")
                 .ephemeral(true),
         )
         .await;
     Ok(false)
 }
 
+async fn reply_ephemeral(ctx: Context<'_>, message: &str) {
+    let _ = ctx
+        .send(
+            poise::CreateReply::default()
+                .content(message.to_string())
+                .ephemeral(true),
+        )
+        .await;
+}
+
 async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     match error {
         poise::FrameworkError::Command { error, ctx, .. } => {
             error!("Command '{}' failed: {}", ctx.command().name, error);
-            let _ = ctx.say("An internal error occurred.").await;
+            reply_ephemeral(
+                ctx,
+                "Something went wrong while running that command. Please try again.",
+            )
+            .await;
+        }
+        poise::FrameworkError::ArgumentParse {
+            error, input, ctx, ..
+        } => {
+            let usage = format!(
+                "{}{} {}",
+                ctx.prefix(),
+                ctx.command().qualified_name,
+                param_signature(ctx.command())
+            );
+            let detail = match input {
+                Some(input) => format!("I couldn't understand `{}`: {}", input, error),
+                None => format!("That command was used incorrectly: {}", error),
+            };
+            reply_ephemeral(ctx, &format!("{}\nUsage: `{}`", detail, usage.trim())).await;
         }
         poise::FrameworkError::MissingBotPermissions {
             missing_permissions,
@@ -139,12 +168,14 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
                 ctx.command().name,
                 missing_permissions
             );
-            let _ = ctx
-                .say(format!(
+            reply_ephemeral(
+                ctx,
+                &format!(
                     "I'm missing the following permissions: **{}**.",
                     missing_permissions
-                ))
-                .await;
+                ),
+            )
+            .await;
         }
         poise::FrameworkError::MissingUserPermissions {
             missing_permissions,
@@ -154,19 +185,16 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
             let perms = missing_permissions
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
-            let _ = ctx
-                .say(format!(
-                    "You're missing the following permissions: **{}**.",
-                    perms
-                ))
-                .await;
+            reply_ephemeral(
+                ctx,
+                &format!("You're missing the following permissions: **{}**.", perms),
+            )
+            .await;
         }
         poise::FrameworkError::CommandCheckFailed { error, ctx, .. } => {
             if let Some(error) = error {
                 error!("Check failed for '{}': {}", ctx.command().name, error);
-                let _ = ctx
-                    .say("You don't have permission to run this command.")
-                    .await;
+                reply_ephemeral(ctx, "You don't have permission to run this command.").await;
             }
         }
         other => {
@@ -221,15 +249,38 @@ async fn help(
             .trim()
             .trim_start_matches(prefix)
             .trim_start_matches('/');
-        if let Some(cmd) = commands.iter().find(|c| c.name == target) {
+        let tokens: Vec<&str> = target.split_whitespace().collect();
+
+        let resolved: Option<(String, &poise::Command<Data, Error>)> = match tokens.as_slice() {
+            [top] => commands
+                .iter()
+                .find(|c| c.name == *top)
+                .map(|c| (c.name.to_string(), c))
+                .or_else(|| {
+                    commands.iter().find_map(|c| {
+                        c.subcommands
+                            .iter()
+                            .find(|s| s.name == *top)
+                            .map(|s| (format!("{} {}", c.name, s.name), s))
+                    })
+                }),
+            [top, sub, ..] => commands
+                .iter()
+                .find(|c| c.name == *top)
+                .and_then(|c| c.subcommands.iter().find(|s| s.name == *sub))
+                .map(|s| (format!("{} {}", top, sub), s)),
+            [] => None,
+        };
+
+        if let Some((full_name, cmd)) = resolved {
             let desc = cmd.description.as_deref().unwrap_or("(no description)");
-            let mut body = format!("**{}{}** - {}", prefix, cmd.name, desc);
+            let mut body = format!("**{}{}** - {}", prefix, full_name, desc);
 
             if !cmd.parameters.is_empty() {
                 body.push_str(&format!(
                     "\n\n**Usage:** `{}{} {}`\n",
                     prefix,
-                    cmd.name,
+                    full_name,
                     param_signature(cmd)
                 ));
                 append_arguments(&mut body, cmd);
@@ -243,12 +294,12 @@ async fn help(
                     if sig.is_empty() {
                         body.push_str(&format!(
                             "\n- `{}{} {}` - {}",
-                            prefix, cmd.name, sub.name, sub_desc
+                            prefix, full_name, sub.name, sub_desc
                         ));
                     } else {
                         body.push_str(&format!(
                             "\n- `{}{} {} {}` - {}",
-                            prefix, cmd.name, sub.name, sig, sub_desc
+                            prefix, full_name, sub.name, sig, sub_desc
                         ));
                     }
                     let mut arg_block = String::new();

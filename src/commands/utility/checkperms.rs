@@ -40,7 +40,8 @@ pub async fn checkperms(ctx: crate::Context<'_>) -> Result<(), crate::Error> {
 
         ctx.say(response).await?;
     } else {
-        ctx.say("Failed to retrieve permissions.").await?;
+        ctx.say("I couldn't read my permissions for this channel yet. Try again in a moment.")
+            .await?;
     }
 
     Ok(())

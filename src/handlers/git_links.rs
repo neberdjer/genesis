@@ -17,7 +17,11 @@ fn clean_url(url: &str) -> &str {
     url.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
 }
 
-async fn send_code_snippet(ctx: &serenity::Context, msg: &serenity::Message, response: String) {
+async fn send_code_snippet(
+    ctx: &serenity::Context,
+    msg: &serenity::Message,
+    response: String,
+) -> bool {
     let footer = format!("\n-# Sent by <@{}>", msg.author.id);
     let max_body = DISCORD_MESSAGE_LIMIT - footer.len();
     let body = if response.len() <= max_body {
@@ -32,7 +36,7 @@ async fn send_code_snippet(ctx: &serenity::Context, msg: &serenity::Message, res
         .content(content)
         .reference_message(msg)
         .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
-    shared::send_reply(ctx, msg, "git_links", reply).await;
+    shared::send_reply(ctx, msg, "git_links", reply).await
 }
 
 pub async fn handle_git_links(
@@ -66,20 +70,28 @@ pub async fn handle_git_links(
     }
 
     let mut any_sent = false;
+    let mut any_failed = false;
     for link in found_links {
         match shared::spawn_blocking_fetch(move || link.format_response()).await {
             Ok(response) => {
-                send_code_snippet(ctx, msg, response).await;
-                any_sent = true;
+                if send_code_snippet(ctx, msg, response).await {
+                    any_sent = true;
+                } else {
+                    any_failed = true;
+                }
             }
             Err(e) => {
                 warn!("Failed to fetch git content: {}", e);
                 shared::record_embed(ctx, "git_links", false).await;
+                any_failed = true;
             }
         }
     }
 
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
+    }
+    if any_failed {
+        shared::react_failure(ctx, msg).await;
     }
 }

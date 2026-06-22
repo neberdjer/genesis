@@ -347,23 +347,30 @@ async fn handle_commit_diffs_impl(
     }
 
     let mut any_sent = false;
+    let mut any_failed = false;
     for commit in found_commits {
         let chunked = match fetch_or_cached(&commit).await {
             Ok(chunked) => chunked,
             Err(e) => {
                 warn!("Failed to fetch commit diff: {}", e);
                 shared::record_embed(ctx, "git_diffs", false).await;
+                any_failed = true;
                 continue;
             }
         };
 
         if send_paginated_diff(ctx, msg, &commit, chunked).await {
             any_sent = true;
+        } else {
+            any_failed = true;
         }
     }
 
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
+    }
+    if any_failed {
+        shared::react_failure(ctx, msg).await;
     }
 }
 

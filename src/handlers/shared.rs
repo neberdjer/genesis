@@ -1,6 +1,6 @@
 use crate::constants::{
-    EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, MAX_RATE_LIMIT_ENTRIES,
-    RATE_LIMIT_SECONDS,
+    EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, FAILED_EMBED_REACTION,
+    MAX_RATE_LIMIT_ENTRIES, RATE_LIMIT_SECONDS,
 };
 use crate::db;
 use poise::serenity_prelude as serenity;
@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::io::Read as _;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tracing::warn;
+use tracing::{debug, warn};
 
 static RATE_LIMITS: OnceLock<Mutex<HashMap<(serenity::UserId, &'static str), Instant>>> =
     OnceLock::new();
@@ -72,6 +72,12 @@ pub async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
 
 pub async fn record_embed(ctx: &serenity::Context, service: &str, success: bool) {
     db::record_embed(&ctx.data::<crate::Data>().pool, service, success).await;
+}
+
+pub async fn react_failure(ctx: &serenity::Context, msg: &serenity::Message) {
+    if let Err(e) = msg.react(&ctx.http, FAILED_EMBED_REACTION).await {
+        debug!("Failed to add failure reaction: {}", e);
+    }
 }
 
 pub async fn send_reply(

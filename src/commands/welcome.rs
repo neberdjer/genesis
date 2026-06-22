@@ -62,7 +62,7 @@ pub async fn welcome(
         )
     } else {
         format!(
-            "**Welcome Settings**\nStatus: {}\nChannel: {}\nRole: {}\nMessage: `{}`\n\nPlaceholders: `{{server_name}}`, `{{user}}`, `{{username}}`, `{{member_count}}`",
+            "**Welcome Settings**\nStatus: {}\nChannel: {}\nRole: {}\nMessage: `{}`\n\nPlaceholders: `{{server_name}}`, `{{user}}`, `{{mention}}`, `{{username}}`, `{{member_count}}`",
             status, channel_display, role_display, settings.message
         )
     };

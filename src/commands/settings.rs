@@ -62,7 +62,7 @@ async fn reply_cleanup(
 
     let status = if enabled { "enabled" } else { "disabled" };
     ctx.say(format!(
-        "Reply cleanup is now **{}** in this server.",
+        "**Reply cleanup** has been {} in this server.",
         status
     ))
     .await?;
@@ -184,8 +184,11 @@ async fn toggle(
     db::update_server_setting(pool, &guild_id.to_string(), &service, enabled).await?;
 
     let status = if enabled { "enabled" } else { "disabled" };
-    ctx.say(format!("**{}** has been {}.", service, status))
-        .await?;
+    ctx.say(format!(
+        "**{}** has been {} in this server.",
+        service, status
+    ))
+    .await?;
 
     Ok(())
 }
