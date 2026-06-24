@@ -5,7 +5,7 @@ mod handlers;
 
 use constants::{
     DEFAULT_ENVIRONMENT, DEFAULT_ONLINE_STATUS, DEFAULT_PREFIX, DEFAULT_STATUS_TEXT,
-    DEFAULT_STATUS_TYPE, STATUS_POLL_SECONDS, TOGGLEABLE_COMMANDS,
+    DEFAULT_STATUS_TYPE, MEDIA_HOSTS_POLL_SECONDS, STATUS_POLL_SECONDS, TOGGLEABLE_COMMANDS,
 };
 use handlers::{
     handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_instagram_links,
@@ -68,10 +68,20 @@ impl serenity::EventHandler for Handler {
                 static POLLER_STARTED: AtomicBool = AtomicBool::new(false);
                 if !POLLER_STARTED.swap(true, Ordering::SeqCst) {
                     tokio::spawn(status_poller(ctx.clone()));
+                    tokio::spawn(custom_hosts_poller(ctx.clone()));
                 }
             }
             _ => {}
         }
+    }
+}
+
+async fn custom_hosts_poller(ctx: serenity::Context) {
+    let data = ctx.data::<Data>();
+    let mut interval = tokio::time::interval(Duration::from_secs(MEDIA_HOSTS_POLL_SECONDS));
+    loop {
+        interval.tick().await;
+        handlers::shared::refresh_custom_media_hosts(&data.pool).await;
     }
 }
 

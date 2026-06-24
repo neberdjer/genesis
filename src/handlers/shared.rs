@@ -7,7 +7,7 @@ use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::io::Read as _;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
@@ -72,6 +72,53 @@ pub async fn suppress_embeds(ctx: &serenity::Context, msg: &serenity::Message) {
 
 pub async fn record_embed(ctx: &serenity::Context, service: &str, success: bool) {
     db::record_embed(&ctx.data::<crate::Data>().pool, service, success).await;
+}
+
+static CUSTOM_MEDIA_HOSTS: OnceLock<RwLock<HashMap<String, Vec<String>>>> = OnceLock::new();
+
+fn custom_media_hosts() -> &'static RwLock<HashMap<String, Vec<String>>> {
+    CUSTOM_MEDIA_HOSTS.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+pub async fn refresh_custom_media_hosts(pool: &PgPool) {
+    match db::list_media_hosts(pool).await {
+        Ok(rows) => {
+            let mut map: HashMap<String, Vec<String>> = HashMap::new();
+            for (service, domain) in rows {
+                map.entry(service)
+                    .or_default()
+                    .push(domain.to_ascii_lowercase());
+            }
+            if let Ok(mut cache) = custom_media_hosts().write() {
+                *cache = map;
+            }
+        }
+        Err(e) => warn!("Failed to refresh custom media hosts: {}", e),
+    }
+}
+
+pub fn host_under_domain(host: &str, domain: &str) -> bool {
+    host == domain
+        || host
+            .strip_suffix(domain)
+            .is_some_and(|prefix| prefix.ends_with('.'))
+}
+
+pub fn matches_host(url: &str, hosts: &[&str], service: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    let Some(host) = extract_host(&lower) else {
+        return false;
+    };
+    hosts.iter().any(|&d| host_under_domain(host, d)) || custom_host_matches(service, host)
+}
+
+pub fn custom_host_matches(service: &str, host: &str) -> bool {
+    let Ok(cache) = custom_media_hosts().read() else {
+        return false;
+    };
+    cache
+        .get(service)
+        .is_some_and(|domains| domains.iter().any(|d| host_under_domain(host, d)))
 }
 
 pub async fn react_failure(ctx: &serenity::Context, msg: &serenity::Message) {
@@ -156,10 +203,7 @@ pub fn extract_host(url: &str) -> Option<&str> {
 pub fn host_matches_blocked(host: &str, blocked: &str) -> bool {
     let host = host.trim_start_matches("www.").to_ascii_lowercase();
     let blocked = blocked.trim_start_matches("www.").to_ascii_lowercase();
-    if host == blocked {
-        return true;
-    }
-    host.ends_with(&format!(".{}", blocked))
+    host_under_domain(&host, &blocked)
 }
 
 pub async fn fetch_blocklist(

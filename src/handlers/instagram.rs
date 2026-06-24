@@ -16,10 +16,10 @@ fn ua_for_media_url(url: &str) -> &'static str {
 }
 
 fn is_instagram_url(word: &str) -> bool {
-    let lower = word.to_ascii_lowercase();
-    if !lower.contains("instagram.com") {
+    if !super::instagram_handler::matches_instagram_host(word) {
         return false;
     }
+    let lower = word.to_ascii_lowercase();
     lower.contains("/p/")
         || lower.contains("/reel/")
         || lower.contains("/reels/")

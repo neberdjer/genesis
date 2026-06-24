@@ -1,6 +1,6 @@
 use super::shared::{self, SettingCheck};
-use super::twitter_handler::TwitterPost;
-use crate::constants::{TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA, TWITTER_HOSTS};
+use super::twitter_handler::{self, TwitterPost};
+use crate::constants::{TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -10,20 +10,7 @@ fn is_twitter_url(word: &str) -> bool {
     if lower.contains("t.co/") {
         return true;
     }
-
-    let Some(scheme_end) = lower.find("://") else {
-        return false;
-    };
-    let after_scheme = &lower[scheme_end + 3..];
-    let host = after_scheme.split('/').next().unwrap_or("");
-    let host_matches = TWITTER_HOSTS
-        .iter()
-        .any(|domain| host == *domain || host.ends_with(&format!(".{}", domain)));
-    if !host_matches {
-        return false;
-    }
-
-    lower.contains("/status/")
+    twitter_handler::matches_twitter_host(word) && lower.contains("/status/")
 }
 
 fn clean_url(url: &str) -> &str {

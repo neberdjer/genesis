@@ -397,6 +397,45 @@ pub async fn remove_git_host(pool: &Pool, domain: &str) -> Result<(), sqlx::Erro
     Ok(())
 }
 
+pub async fn list_media_hosts(pool: &Pool) -> Result<Vec<(String, String)>, sqlx::Error> {
+    sqlx::query_as::<_, (String, String)>(
+        "SELECT service, domain FROM media_hosts ORDER BY service, domain",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn add_media_host(
+    pool: &Pool,
+    service: &str,
+    domain: &str,
+    by: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"INSERT INTO media_hosts (service, domain, added_by) VALUES ($1, $2, $3)
+           ON CONFLICT (service, domain) DO NOTHING"#,
+    )
+    .bind(service)
+    .bind(domain)
+    .bind(by)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_media_host(
+    pool: &Pool,
+    service: &str,
+    domain: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM media_hosts WHERE service = $1 AND domain = $2")
+        .bind(service)
+        .bind(domain)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn list_disabled_commands(pool: &Pool, scope: &str) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar::<_, String>(
         "SELECT command FROM command_overrides WHERE scope = $1 AND enabled = FALSE",

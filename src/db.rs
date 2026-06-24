@@ -290,6 +290,12 @@ pub async fn list_git_hosts(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
         .await
 }
 
+pub async fn list_media_hosts(pool: &PgPool) -> Result<Vec<(String, String)>, sqlx::Error> {
+    sqlx::query_as::<_, (String, String)>("SELECT service, domain FROM media_hosts")
+        .fetch_all(pool)
+        .await
+}
+
 pub async fn record_command(pool: &PgPool, command: &str) {
     let result = sqlx::query(
         r#"

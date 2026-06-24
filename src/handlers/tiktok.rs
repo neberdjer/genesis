@@ -6,18 +6,7 @@ use sqlx::PgPool;
 use tracing::{debug, warn};
 
 fn is_tiktok_url(word: &str) -> bool {
-    let lower = word.to_ascii_lowercase();
-    let Some(scheme_end) = lower.find("://") else {
-        return false;
-    };
-    let after_scheme = &lower[scheme_end + 3..];
-    let host = after_scheme.split('/').next().unwrap_or("");
-    let normalized = host
-        .trim_start_matches("www.")
-        .trim_start_matches("vm.")
-        .trim_start_matches("vt.")
-        .trim_start_matches("m.");
-    normalized == "tiktok.com"
+    super::tiktok_handler::matches_tiktok_host(word)
 }
 
 fn clean_url(url: &str) -> &str {
@@ -87,21 +76,30 @@ pub async fn build_container(
     (attachments, container)
 }
 
+struct FoundVideo {
+    original: String,
+    normalized: String,
+}
+
 pub async fn handle_tiktok_links(
     ctx: &serenity::Context,
     msg: &serenity::Message,
     pool: Option<&PgPool>,
 ) {
-    let mut found_videos: Vec<String> = Vec::new();
+    let mut found_videos: Vec<FoundVideo> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for word in msg.content.split_whitespace() {
         if !is_tiktok_url(word) {
             continue;
         }
-        if let Some(parsed) = TikTokPost::parse(clean_url(word))
+        let cleaned = clean_url(word);
+        if let Some(parsed) = TikTokPost::parse(cleaned)
             && seen.insert(parsed.clone())
         {
-            found_videos.push(parsed);
+            found_videos.push(FoundVideo {
+                original: cleaned.to_string(),
+                normalized: parsed,
+            });
         }
     }
 
@@ -110,7 +108,7 @@ pub async fn handle_tiktok_links(
     }
 
     let blocklist = shared::fetch_blocklist(pool, msg.guild_id).await;
-    found_videos.retain(|url| !shared::is_url_in_blocklist(url, &blocklist));
+    found_videos.retain(|v| !shared::is_url_in_blocklist(&v.original, &blocklist));
     if found_videos.is_empty() {
         return;
     }
@@ -126,7 +124,8 @@ pub async fn handle_tiktok_links(
 
     let mut any_sent = false;
     let mut any_failed = false;
-    for video_url in found_videos {
+    for video in found_videos {
+        let video_url = video.normalized;
         debug!("Fetching TikTok: url={}", video_url);
         let url = video_url.clone();
         match shared::spawn_blocking_fetch(move || TikTokPost::fetch(&url)).await {

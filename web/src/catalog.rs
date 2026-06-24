@@ -52,14 +52,70 @@ pub const FEATURE_GROUPS: &[FeatureGroup] = &[
     },
 ];
 
-pub const SUPPORTED_DOMAINS: &[&str] = &[
-    "twitter.com",
-    "x.com",
-    "instagram.com",
-    "tiktok.com",
-    "github.com",
-    "gitlab.com",
+pub struct DomainGroup {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub domains: &'static [&'static str],
+    pub media: bool,
+}
+
+pub const DOMAIN_GROUPS: &[DomainGroup] = &[
+    DomainGroup {
+        key: "twitter",
+        label: "twitter / x",
+        media: true,
+        domains: &[
+            "twitter.com",
+            "x.com",
+            "vxtwitter.com",
+            "fxtwitter.com",
+            "fixupx.com",
+            "xfixup.com",
+            "fixvx.com",
+            "twittpr.com",
+            "twitterez.com",
+        ],
+    },
+    DomainGroup {
+        key: "instagram",
+        label: "instagram",
+        media: true,
+        domains: &[
+            "instagram.com",
+            "ddinstagram.com",
+            "kkinstagram.com",
+            "vxinstagram.com",
+            "eeinstagram.com",
+            "uuinstagram.com",
+            "zzinstagram.com",
+            "fxstagram.com",
+        ],
+    },
+    DomainGroup {
+        key: "tiktok",
+        label: "tiktok",
+        media: true,
+        domains: &[
+            "tiktok.com",
+            "vxtiktok.com",
+            "tiktxk.com",
+            "tnktok.com",
+            "tfxktok.com",
+            "kktiktok.com",
+            "fixtiktok.com",
+        ],
+    },
+    DomainGroup {
+        key: "git",
+        label: "github / gitlab",
+        media: false,
+        domains: &["github.com", "gitlab.com"],
+    },
 ];
+
+pub fn media_services() -> impl Iterator<Item = &'static DomainGroup> {
+    DOMAIN_GROUPS.iter().filter(|g| g.media)
+}
 
 pub const ACTIVITY_TYPES: &[&str] = &["playing", "listening", "watching", "competing"];
 pub const ONLINE_STATES: &[&str] = &["online", "idle", "dnd", "invisible"];
@@ -121,10 +177,6 @@ pub const COMMAND_GROUPS: &[Group] = &[
             Command {
                 usage: "/stats",
                 desc: "show servers, users, uptime, and version",
-            },
-            Command {
-                usage: "/help [command]",
-                desc: "show help for all commands or one command",
             },
         ],
     },

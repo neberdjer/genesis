@@ -139,6 +139,8 @@ async fn main() {
         .route("/owner/domains/remove", post(owner_domain_remove))
         .route("/owner/git-hosts/add", post(owner_git_add))
         .route("/owner/git-hosts/remove", post(owner_git_remove))
+        .route("/owner/media-hosts/add", post(owner_media_add))
+        .route("/owner/media-hosts/remove", post(owner_media_remove))
         .route("/owner/commands", post(owner_commands_save))
         .route("/owner/status", post(owner_status_save))
         .route("/features", get(features))
@@ -412,6 +414,7 @@ async fn guild_config(
 
     let mut domains = Vec::new();
     let mut git_hosts = Vec::new();
+    let mut media_hosts = Vec::new();
     let mut disabled_commands = Vec::new();
     let mut channels = Vec::new();
     let mut roles = Vec::new();
@@ -425,12 +428,14 @@ async fn guild_config(
                 .unwrap_or_default();
         }
         "domains" => {
-            let (d, gh) = tokio::join!(
+            let (d, gh, mh) = tokio::join!(
                 db::list_domains(&state.pool, &guild_id),
                 db::list_git_hosts(&state.pool),
+                db::list_media_hosts(&state.pool),
             );
             domains = d.unwrap_or_default();
             git_hosts = gh.unwrap_or_default();
+            media_hosts = mh.unwrap_or_default();
         }
         "welcome" => {
             let (c, r) = tokio::join!(
@@ -464,6 +469,7 @@ async fn guild_config(
             &settings,
             &domains,
             &git_hosts,
+            &media_hosts,
             &disabled_commands,
             &channels,
             &roles,
@@ -705,34 +711,37 @@ async fn save_domains(
         Err(resp) => return resp,
     };
 
-    let (current, git_hosts) = tokio::join!(
+    let (current, git_hosts, media_hosts) = tokio::join!(
         db::list_domains(&state.pool, &guild_id),
         db::list_git_hosts(&state.pool),
+        db::list_media_hosts(&state.pool),
     );
     let current = current.unwrap_or_default();
     let git_hosts = git_hosts.unwrap_or_default();
+    let media_hosts = media_hosts.unwrap_or_default();
     let current_set: HashSet<&str> = current.iter().map(String::as_str).collect();
 
-    let mut candidates: HashSet<String> = catalog::SUPPORTED_DOMAINS
+    let mut candidates: HashSet<&str> = catalog::DOMAIN_GROUPS
         .iter()
-        .map(|s| s.to_string())
+        .flat_map(|g| g.domains.iter().copied())
         .collect();
-    candidates.extend(git_hosts);
-    candidates.extend(current.iter().cloned());
+    candidates.extend(git_hosts.iter().map(String::as_str));
+    candidates.extend(media_hosts.iter().map(|(_, d)| d.as_str()));
+    candidates.extend(current.iter().map(String::as_str));
 
-    let mut blocked: Vec<String> = Vec::new();
-    let mut unblocked: Vec<String> = Vec::new();
+    let mut blocked: Vec<&str> = Vec::new();
+    let mut unblocked: Vec<&str> = Vec::new();
     for domain in candidates {
-        let ticked = form.contains_key(&domain);
-        let already = current_set.contains(domain.as_str());
+        let ticked = form.contains_key(domain);
+        let already = current_set.contains(domain);
         match (ticked, already) {
             (true, false) => {
-                match db::add_domain(&state.pool, &guild_id, &domain, &session.user.id).await {
+                match db::add_domain(&state.pool, &guild_id, domain, &session.user.id).await {
                     Ok(()) => blocked.push(domain),
                     Err(e) => error!("blocked-domain update failed for {}: {}", domain, e),
                 }
             }
-            (false, true) => match db::remove_domain(&state.pool, &guild_id, &domain).await {
+            (false, true) => match db::remove_domain(&state.pool, &guild_id, domain).await {
                 Ok(()) => unblocked.push(domain),
                 Err(e) => error!("blocked-domain update failed for {}: {}", domain, e),
             },
@@ -740,8 +749,6 @@ async fn save_domains(
         }
     }
 
-    let blocked: Vec<&str> = blocked.iter().map(String::as_str).collect();
-    let unblocked: Vec<&str> = unblocked.iter().map(String::as_str).collect();
     if let Some(s) = join_changes(&[("blocked", &blocked), ("unblocked", &unblocked)]) {
         audit(&state, &guild_id, &session, "domains", &s).await;
     }
@@ -834,6 +841,12 @@ struct OwnerDomainForm {
 }
 
 #[derive(Deserialize)]
+struct OwnerMediaForm {
+    service: String,
+    domain: String,
+}
+
+#[derive(Deserialize)]
 struct StatusForm {
     status_type: String,
     #[serde(default)]
@@ -863,6 +876,7 @@ async fn owner_page(
     let mut servers = Vec::new();
     let mut global_domains = Vec::new();
     let mut git_hosts = Vec::new();
+    let mut media_hosts = Vec::new();
     let mut disabled = Vec::new();
     let mut status = None;
     let mut bot_servers: Vec<discord::BotGuild> = Vec::new();
@@ -894,12 +908,14 @@ async fn owner_page(
             bot_servers = all.into_iter().skip(offset).take(PAGE_SIZE).collect();
         }
         "domains" => {
-            let (g, gh) = tokio::join!(
+            let (g, gh, mh) = tokio::join!(
                 db::list_global_domains(&state.pool),
                 db::list_git_hosts(&state.pool),
+                db::list_media_hosts(&state.pool),
             );
             global_domains = g.unwrap_or_default();
             git_hosts = gh.unwrap_or_default();
+            media_hosts = mh.unwrap_or_default();
         }
         "commands" => {
             disabled = db::list_disabled_commands(&state.pool, "global")
@@ -925,6 +941,7 @@ async fn owner_page(
             &servers,
             &global_domains,
             &git_hosts,
+            &media_hosts,
             &disabled,
             status.as_ref(),
             &bot_servers,
@@ -1092,6 +1109,47 @@ async fn owner_git_remove(
     }
     if let Err(e) = db::remove_git_host(&state.pool, f.domain.trim()).await {
         error!("remove_git_host failed: {}", e);
+    }
+    (
+        session::set_saved(jar, state.config.cookie_secure),
+        Redirect::to("/owner?tab=domains"),
+    )
+        .into_response()
+}
+
+async fn owner_media_add(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Form(f): Form<OwnerMediaForm>,
+) -> Response {
+    let session = match owner_guard(&state, &jar) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let valid_service = catalog::media_services().any(|g| g.key == f.service);
+    if valid_service
+        && let Some(d) = clean_domain(&f.domain)
+        && let Err(e) = db::add_media_host(&state.pool, &f.service, &d, &session.user.id).await
+    {
+        error!("add_media_host failed: {}", e);
+    }
+    (
+        session::set_saved(jar, state.config.cookie_secure),
+        Redirect::to("/owner?tab=domains"),
+    )
+        .into_response()
+}
+
+async fn owner_media_remove(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Form(f): Form<OwnerMediaForm>,
+) -> Response {
+    if let Err(r) = owner_guard(&state, &jar) {
+        return r;
+    }
+    if let Err(e) = db::remove_media_host(&state.pool, f.service.trim(), f.domain.trim()).await {
+        error!("remove_media_host failed: {}", e);
     }
     (
         session::set_saved(jar, state.config.cookie_secure),

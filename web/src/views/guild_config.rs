@@ -1,5 +1,5 @@
 use super::layout::{layout, pager};
-use crate::catalog::{SUPPORTED_DOMAINS, toggleable_commands};
+use crate::catalog::{DOMAIN_GROUPS, toggleable_commands};
 use crate::db::{AuditEntry, SERVICES, Settings};
 use crate::discord::{DashGuild, GuildChannel, GuildRole, User};
 use maud::{Markup, html};
@@ -140,34 +140,38 @@ fn domain_checks(domains: &[&str], blocked: &HashSet<&str>) -> Markup {
     }
 }
 
-fn domains_panel(guild: &DashGuild, blocked: &[String], git_hosts: &[String]) -> Markup {
+fn domains_panel(
+    guild: &DashGuild,
+    blocked: &[String],
+    git_hosts: &[String],
+    media_hosts: &[(String, String)],
+) -> Markup {
     let blocked_set: HashSet<&str> = blocked.iter().map(String::as_str).collect();
-    let git_set: HashSet<&str> = git_hosts.iter().map(String::as_str).collect();
 
-    let mut seen: HashSet<&str> = HashSet::new();
-    let mut platforms: Vec<&str> = Vec::new();
-    for d in SUPPORTED_DOMAINS
+    let mut known: HashSet<&str> = DOMAIN_GROUPS
         .iter()
-        .copied()
+        .flat_map(|g| g.domains.iter().copied())
+        .collect();
+    let custom: Vec<&str> = git_hosts
+        .iter()
+        .map(String::as_str)
+        .chain(media_hosts.iter().map(|(_, d)| d.as_str()))
         .chain(blocked.iter().map(String::as_str))
-    {
-        if !git_set.contains(d) && seen.insert(d) {
-            platforms.push(d);
-        }
-    }
+        .filter(|d| known.insert(d))
+        .collect();
 
     html! {
-        p.muted { "tick a domain to stop genesis embedding its links in this server." }
+        p.muted { "tick a domain to stop genesis embedding its links in this server. each platform and its mirror domains can be blocked separately." }
         form.config-form.autosave method="post" action=(format!("/dashboard/{}/domains", guild.id)) {
-            h3 { "platforms" }
-            (domain_checks(&platforms, &blocked_set))
-
-            @if !git_hosts.is_empty() {
-                h3 { "git hosts" }
-                p.field-hint { "self-hosted git domains added by the bot owner." }
-                (domain_checks(&git_hosts.iter().map(String::as_str).collect::<Vec<_>>(), &blocked_set))
+            @for g in DOMAIN_GROUPS {
+                h3 { (g.label) }
+                (domain_checks(g.domains, &blocked_set))
             }
-
+            @if !custom.is_empty() {
+                h3 { "custom domains" }
+                p.field-hint { "extra git and mirror domains added by the bot owner." }
+                (domain_checks(&custom, &blocked_set))
+            }
             span.save-status aria-live="polite" {}
         }
     }
@@ -222,6 +226,7 @@ pub fn guild_config(
     settings: &Settings,
     domains: &[String],
     git_hosts: &[String],
+    media_hosts: &[(String, String)],
     disabled_commands: &[String],
     channels: &[GuildChannel],
     roles: &[GuildRole],
@@ -249,7 +254,7 @@ pub fn guild_config(
             @match tab {
                 "commands" => (commands_panel(guild, disabled_commands)),
                 "welcome" => (welcome_panel(guild, settings, channels, roles)),
-                "domains" => (domains_panel(guild, domains, git_hosts)),
+                "domains" => (domains_panel(guild, domains, git_hosts, media_hosts)),
                 "audit" => (audit_panel(audit, &guild.id, audit_page, audit_total_pages)),
                 "danger" => (danger_panel(guild)),
                 _ => (services_panel(guild, settings)),

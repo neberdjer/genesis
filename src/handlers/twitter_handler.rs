@@ -1,4 +1,4 @@
-use crate::constants::{TWITTER_DESKTOP_UA, TWITTER_SYNDICATION_UA};
+use crate::constants::{TWITTER_DESKTOP_UA, TWITTER_HOSTS, TWITTER_SYNDICATION_UA};
 use regex::Regex;
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -6,6 +6,10 @@ use std::time::Duration;
 use tracing::debug;
 
 static TWITTER_PATTERN: OnceLock<Regex> = OnceLock::new();
+
+pub(crate) fn matches_twitter_host(url: &str) -> bool {
+    super::shared::matches_host(url, TWITTER_HOSTS, "twitter")
+}
 
 pub struct TwitterPost {
     pub author: String,
@@ -264,12 +268,11 @@ impl TwitterPost {
     }
 
     fn extract_tweet_id(url: &str) -> Option<String> {
-        let pattern = TWITTER_PATTERN.get_or_init(|| {
-            Regex::new(
-                r"(?i)https?://(?:[a-z0-9-]+\.)*(?:twitter|x|vxtwitter|fxtwitter|fixupx|xfixup|fixvx|twittpr|twitterez)\.com/(?:i/web/|[^/?#]+/)?status/(\d+)",
-            )
-            .unwrap()
-        });
+        if !matches_twitter_host(url) {
+            return None;
+        }
+        let pattern = TWITTER_PATTERN
+            .get_or_init(|| Regex::new(r"(?i)/(?:i/web/|[^/?#]+/)?status/(\d+)").unwrap());
         pattern
             .captures(url)?
             .get(1)

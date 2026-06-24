@@ -1,5 +1,5 @@
 use crate::constants::{
-    INSTAGRAM_APP_ID, INSTAGRAM_DESKTOP_UA, INSTAGRAM_DOC_IDS, INSTAGRAM_EMBED_UA,
+    INSTAGRAM_APP_ID, INSTAGRAM_DESKTOP_UA, INSTAGRAM_DOC_IDS, INSTAGRAM_EMBED_UA, INSTAGRAM_HOSTS,
     INSTAGRAM_MAX_CAROUSEL_SLIDES, INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS, INSTAGRAM_MOBILE_UA,
 };
 use regex::Regex;
@@ -31,6 +31,10 @@ struct AnonTokens {
     csrf: String,
     bloks_version: String,
     cookie: String,
+}
+
+pub(crate) fn matches_instagram_host(url: &str) -> bool {
+    super::shared::matches_host(url, INSTAGRAM_HOSTS, "instagram")
 }
 
 impl InstagramPost {
@@ -670,12 +674,11 @@ impl InstagramPost {
     }
 
     fn extract_shortcode(url: &str) -> Option<String> {
-        let pattern = INSTAGRAM_PATTERN.get_or_init(|| {
-            Regex::new(
-                r"(?i)https?://(?:[a-z0-9-]+\.)?instagram\.com/(?:[^/?#]+/)?(?:p|reels?|tv)/([a-zA-Z0-9_-]+)",
-            )
-            .unwrap()
-        });
+        if !matches_instagram_host(url) {
+            return None;
+        }
+        let pattern = INSTAGRAM_PATTERN
+            .get_or_init(|| Regex::new(r"(?i)/(?:p|reels?|tv)/([a-zA-Z0-9_-]+)").unwrap());
         pattern
             .captures(url)?
             .get(1)

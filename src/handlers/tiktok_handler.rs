@@ -1,9 +1,13 @@
-use crate::constants::TIKTOK_DOWNLOAD_UA;
+use crate::constants::{TIKTOK_DOWNLOAD_UA, TIKTOK_HOSTS};
 use regex::Regex;
 use serde::Deserialize;
 use std::sync::OnceLock;
 
 static TIKTOK_PATTERN: OnceLock<Regex> = OnceLock::new();
+
+pub(crate) fn matches_tiktok_host(url: &str) -> bool {
+    super::shared::matches_host(url, TIKTOK_HOSTS, "tiktok")
+}
 
 #[derive(Debug, Deserialize)]
 struct TikTokApiResponse {
@@ -37,9 +41,12 @@ pub struct TikTokPost {
 
 impl TikTokPost {
     pub fn parse(url: &str) -> Option<String> {
+        if !matches_tiktok_host(url) {
+            return None;
+        }
         let pattern = TIKTOK_PATTERN.get_or_init(|| {
             Regex::new(
-                r"(?i)https?://(?:www\.|vm\.|vt\.|m\.)?tiktok\.com/(?:@[\w.-]+/(?:video|photo)/|t/|embed/(?:v\d+/)?|v/)?(\w+)",
+                r"(?i)https?://[^/]+/(?:@[\w.-]+/(?:video|photo)/|t/|embed/(?:v\d+/)?|v/)?(\w+)",
             )
             .unwrap()
         });

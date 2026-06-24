@@ -138,7 +138,34 @@ fn servers_panel(
     }
 }
 
-fn domains_panel(global_domains: &[String], git_hosts: &[String]) -> Markup {
+fn media_host_list(media_hosts: &[(String, String)]) -> Markup {
+    html! {
+        ul.idlist {
+            @for (service, domain) in media_hosts {
+                li {
+                    span.idlist-id {
+                        span.tag.sm { (service) }
+                        " " (domain)
+                    }
+                    form.idlist-form method="post" action="/owner/media-hosts/remove" {
+                        input type="hidden" name="service" value=(service);
+                        input type="hidden" name="domain" value=(domain);
+                        button.idlist-remove type="submit" aria-label="remove" title="remove" { "×" }
+                    }
+                }
+            }
+            @if media_hosts.is_empty() {
+                li.muted { "none" }
+            }
+        }
+    }
+}
+
+fn domains_panel(
+    global_domains: &[String],
+    git_hosts: &[String],
+    media_hosts: &[(String, String)],
+) -> Markup {
     html! {
         h3 { "global blocked domains" }
         p.muted { "ignored in every server, on top of per-server blocks." }
@@ -153,6 +180,19 @@ fn domains_panel(global_domains: &[String], git_hosts: &[String]) -> Markup {
         (domain_list(git_hosts, "/owner/git-hosts/remove"))
         form.add-row method="post" action="/owner/git-hosts/add" {
             input type="text" name="domain" placeholder="git.example.com" aria-label="git host domain" required;
+            button.btn.sm type="submit" { "add" }
+        }
+
+        h3 { "custom media domains" }
+        p.muted { "extra mirror domains genesis should treat as a platform, alongside the built-in ones. members can block them per server." }
+        (media_host_list(media_hosts))
+        form.add-row method="post" action="/owner/media-hosts/add" {
+            select name="service" aria-label="service" required {
+                @for g in catalog::media_services() {
+                    option value=(g.key) { (g.label) }
+                }
+            }
+            input type="text" name="domain" placeholder="example.com" aria-label="media host domain" required;
             button.btn.sm type="submit" { "add" }
         }
     }
@@ -217,6 +257,7 @@ pub fn owner(
     servers: &[BlacklistEntry],
     global_domains: &[String],
     git_hosts: &[String],
+    media_hosts: &[(String, String)],
     disabled_commands: &[String],
     status: Option<&BotStatus>,
     bot_servers: &[discord::BotGuild],
@@ -241,7 +282,7 @@ pub fn owner(
         div.owner-body {
             @match tab {
                 "servers" => (servers_panel(bot_servers, servers, query, page, total_pages, total)),
-                "domains" => (domains_panel(global_domains, git_hosts)),
+                "domains" => (domains_panel(global_domains, git_hosts, media_hosts)),
                 "commands" => (commands_panel(disabled_commands)),
                 "status" => (status_panel(status)),
                 _ => (blacklist_panel(users)),

@@ -5,6 +5,7 @@ pub const TRUNCATED_MESSAGE_LIMIT: usize = 1950;
 pub const DEFAULT_PREFIX: &str = "!";
 pub const DEFAULT_ENVIRONMENT: &str = "prod";
 pub const STATUS_POLL_SECONDS: u64 = 20;
+pub const MEDIA_HOSTS_POLL_SECONDS: u64 = 60;
 pub const REPLY_WATCH_SECONDS: u64 = 60;
 pub const FAILED_EMBED_REACTION: char = '❌';
 pub const DEFAULT_STATUS_TYPE: &str = "watching";
@@ -29,6 +30,16 @@ pub const INSTAGRAM_MIRRORS: &[&str] = &[
     "eeinstagram.com",
     "uuinstagram.com",
 ];
+pub const INSTAGRAM_HOSTS: &[&str] = &[
+    "instagram.com",
+    "ddinstagram.com",
+    "kkinstagram.com",
+    "vxinstagram.com",
+    "eeinstagram.com",
+    "uuinstagram.com",
+    "zzinstagram.com",
+    "fxstagram.com",
+];
 pub const INSTAGRAM_MAX_CAROUSEL_SLIDES: usize = 20;
 
 pub const TWITTER_SYNDICATION_UA: &str = "Googlebot";
@@ -36,6 +47,15 @@ pub const TWITTER_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)"
 pub const TWITTER_DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 pub const TIKTOK_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
+pub const TIKTOK_HOSTS: &[&str] = &[
+    "tiktok.com",
+    "vxtiktok.com",
+    "tiktxk.com",
+    "tnktok.com",
+    "tfxktok.com",
+    "kktiktok.com",
+    "fixtiktok.com",
+];
 
 pub const TIMEZONE_API: &str = "https://timezone.creations.works/v1/get";
 pub const TIMEZONE_REGISTER_URL: &str = "https://timezone.creations.works/";
