@@ -3,10 +3,18 @@ use regex::Regex;
 use serde::Deserialize;
 use std::sync::OnceLock;
 
-static TIKTOK_PATTERN: OnceLock<Regex> = OnceLock::new();
+static TIKTOK_POST_PATTERN: OnceLock<Regex> = OnceLock::new();
+static TIKTOK_SHORT_PATTERN: OnceLock<Regex> = OnceLock::new();
 
 pub(crate) fn matches_tiktok_host(url: &str) -> bool {
     super::shared::matches_host(url, TIKTOK_HOSTS, "tiktok")
+}
+
+fn is_short_link_host(url: &str) -> bool {
+    super::shared::extract_host(url).is_some_and(|host| {
+        let host = host.to_ascii_lowercase();
+        host.starts_with("vm.") || host.starts_with("vt.")
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,17 +52,27 @@ impl TikTokPost {
         if !matches_tiktok_host(url) {
             return None;
         }
-        let pattern = TIKTOK_PATTERN.get_or_init(|| {
+
+        let post_pattern = TIKTOK_POST_PATTERN.get_or_init(|| {
             Regex::new(
-                r"(?i)https?://[^/]+/(?:@[\w.-]+/(?:video|photo)/|t/|embed/(?:v\d+/)?|v/)?(\w+)",
+                r"(?i)https?://[^/]+/(?:@[\w.-]*/(?:video|photo)/(\d+)|(?:embed(?:/v\d+)?|player/v1)/(\d+)|v/(\d+)\.html|t/([A-Za-z0-9]+))",
             )
             .unwrap()
         });
+        if let Some(captures) = post_pattern.captures(url) {
+            let id = (1..=4).find_map(|i| captures.get(i))?.as_str();
+            return Some(format!("https://vm.tiktok.com/{}", id));
+        }
 
-        let captures = pattern.captures(url)?;
-        let video_id = captures.get(1)?.as_str();
+        if is_short_link_host(url) {
+            let short_pattern = TIKTOK_SHORT_PATTERN
+                .get_or_init(|| Regex::new(r"(?i)https?://[^/]+/([A-Za-z0-9]+)").unwrap());
+            if let Some(captures) = short_pattern.captures(url) {
+                return Some(format!("https://vm.tiktok.com/{}", captures.get(1)?.as_str()));
+            }
+        }
 
-        Some(format!("https://vm.tiktok.com/{}", video_id))
+        None
     }
 
     pub fn fetch(url: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
