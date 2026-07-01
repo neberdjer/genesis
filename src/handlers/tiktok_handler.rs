@@ -68,7 +68,10 @@ impl TikTokPost {
             let short_pattern = TIKTOK_SHORT_PATTERN
                 .get_or_init(|| Regex::new(r"(?i)https?://[^/]+/([A-Za-z0-9]+)").unwrap());
             if let Some(captures) = short_pattern.captures(url) {
-                return Some(format!("https://vm.tiktok.com/{}", captures.get(1)?.as_str()));
+                return Some(format!(
+                    "https://vm.tiktok.com/{}",
+                    captures.get(1)?.as_str()
+                ));
             }
         }
 
