@@ -8,8 +8,8 @@ use constants::{
     DEFAULT_STATUS_TYPE, MEDIA_HOSTS_POLL_SECONDS, STATUS_POLL_SECONDS, TOGGLEABLE_COMMANDS,
 };
 use handlers::{
-    handle_commit_diffs, handle_diff_pagination, handle_git_links, handle_instagram_links,
-    handle_member_join, handle_tiktok_links, handle_twitter_links,
+    handle_bot_mention, handle_commit_diffs, handle_diff_pagination, handle_git_links,
+    handle_instagram_links, handle_member_join, handle_tiktok_links, handle_twitter_links,
 };
 use poise::serenity_prelude as serenity;
 use std::env;
@@ -23,6 +23,7 @@ use std::time::{Duration, Instant};
 pub struct Data {
     pub pool: Arc<PgPool>,
     pub start_time: Instant,
+    pub prefix: String,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -41,6 +42,7 @@ impl serenity::EventHandler for Handler {
                     return;
                 }
                 tokio::join!(
+                    handle_bot_mention(ctx, new_message, Some(&data.pool), &data.prefix),
                     handle_commit_diffs(ctx, new_message, Some(&data.pool)),
                     handle_git_links(ctx, new_message, Some(&data.pool)),
                     handle_twitter_links(ctx, new_message, Some(&data.pool)),
@@ -372,6 +374,7 @@ async fn main() -> Result<(), Error> {
     let data = Data {
         pool: Arc::new(pool),
         start_time: Instant::now(),
+        prefix: prefix.clone(),
     };
 
     let mut all_commands = commands::all_commands();
