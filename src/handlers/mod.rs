@@ -1,11 +1,13 @@
 pub(crate) mod git_diff_handler;
 pub(crate) mod git_handler;
 pub(crate) mod instagram_handler;
+pub(crate) mod pagination;
 pub(crate) mod reply_watch;
 pub(crate) mod shared;
 pub(crate) mod tiktok_handler;
 pub(crate) mod twitter_handler;
 
+pub mod file_pages;
 pub mod git_diffs;
 pub mod git_links;
 pub mod instagram;
@@ -14,6 +16,7 @@ pub mod tiktok;
 pub mod twitter;
 pub mod welcome;
 
+pub use file_pages::handle_file_pagination;
 pub use git_diffs::{handle_commit_diffs, handle_diff_pagination};
 pub use git_links::handle_git_links;
 pub use instagram::handle_instagram_links;

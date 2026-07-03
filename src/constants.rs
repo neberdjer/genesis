@@ -80,6 +80,7 @@ pub const RATE_LIMIT_SECONDS: u64 = 10;
 pub const MAX_RATE_LIMIT_ENTRIES: usize = 10_000;
 pub const WELCOME_RATE_LIMIT_SECONDS: u64 = 2;
 pub const DIFF_CACHE_MAX_ENTRIES: usize = 1000;
+pub const FILE_CACHE_MAX_ENTRIES: usize = 50;
 
 pub const COMMAND_SCOPE_GLOBAL: &str = "global";
 

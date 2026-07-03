@@ -1,13 +1,14 @@
 use super::git_diff_handler::CommitDiff;
+use super::pagination;
 use super::shared::{self, SettingCheck};
-use crate::constants::{DIFF_CACHE_MAX_ENTRIES, DISCORD_MESSAGE_LIMIT, FILES_PER_PAGE};
+use crate::constants::{DIFF_CACHE_MAX_ENTRIES, FILES_PER_PAGE};
 use crate::db;
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
-use tracing::{error, warn};
+use tracing::warn;
 
 static DIFF_CACHE: OnceLock<Mutex<HashMap<String, CachedDiff>>> = OnceLock::new();
 
@@ -25,7 +26,7 @@ impl CachedDiff {
     }
 
     fn is_expired(&self) -> bool {
-        self.timestamp.elapsed().as_secs() > 600
+        pagination::is_cache_expired(self.timestamp)
     }
 }
 
@@ -65,17 +66,7 @@ fn get_cached_responses(commit: &CommitDiff) -> Option<Vec<String>> {
 fn cache_responses(commit: &CommitDiff, responses: Vec<String>) {
     let cache = DIFF_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(mut cache) = cache.lock() {
-        if cache.len() >= DIFF_CACHE_MAX_ENTRIES {
-            cache.retain(|_, v| !v.is_expired());
-            if cache.len() >= DIFF_CACHE_MAX_ENTRIES
-                && let Some(oldest_key) = cache
-                    .iter()
-                    .min_by_key(|(_, v)| v.timestamp)
-                    .map(|(k, _)| k.clone())
-            {
-                cache.remove(&oldest_key);
-            }
-        }
+        pagination::evict_for_insert(&mut cache, DIFF_CACHE_MAX_ENTRIES, |v| v.timestamp);
         let key = get_cache_key(commit);
         cache.insert(key, CachedDiff::new(responses));
     }
@@ -119,20 +110,12 @@ pub fn clean_url(url: &str) -> &str {
         .trim_end_matches([',', ')', ']', '}', ';'])
 }
 
-fn extract_sent_by_footer(content: &str) -> Option<String> {
-    let marker = "\n-# Sent by <@";
-    let start = content.rfind(marker)?;
-    let rest = &content[start..];
-    let end = rest.find('>')?;
-    Some(rest[..=end].to_string())
-}
-
 pub fn create_pagination_buttons(
     current_page: usize,
     total_pages: usize,
     commit: &CommitDiff,
     lock_user_id: Option<u64>,
-) -> serenity::CreateActionRow<'_> {
+) -> serenity::CreateActionRow<'static> {
     let platform_prefix = match (commit.platform, commit.is_compare) {
         (super::git_diff_handler::GitPlatform::GitHub, false) => "gh",
         (super::git_diff_handler::GitPlatform::GitHub, true) => "gH",
@@ -152,8 +135,8 @@ pub fn create_pagination_buttons(
         .map(|id| format!(":{}", id))
         .unwrap_or_default();
 
-    let prev_button = serenity::CreateButton::new(format!(
-        "diff:prev:{}{}{}:{}:{}:{}{}{}_{}{}",
+    let payload = format!(
+        "{}{}{}:{}:{}:{}{}{}_{}{}",
         platform_prefix,
         separator,
         host_part,
@@ -164,34 +147,14 @@ pub fn create_pagination_buttons(
         file_filter_part,
         current_page,
         lock_suffix
-    ))
-    .label("Previous")
-    .style(serenity::ButtonStyle::Primary)
-    .disabled(current_page == 0);
+    );
 
-    let page_info = serenity::CreateButton::new("page_info")
-        .label(format!("{}/{}", current_page + 1, total_pages))
-        .style(serenity::ButtonStyle::Secondary)
-        .disabled(true);
-
-    let next_button = serenity::CreateButton::new(format!(
-        "diff:next:{}{}{}:{}:{}:{}{}{}_{}{}",
-        platform_prefix,
-        separator,
-        host_part,
-        commit.owner,
-        commit.repo,
-        commit.commit,
-        file_separator,
-        file_filter_part,
+    pagination::pagination_row(
+        format!("diff:prev:{}", payload),
+        format!("diff:next:{}", payload),
         current_page,
-        lock_suffix
-    ))
-    .label("Next")
-    .style(serenity::ButtonStyle::Primary)
-    .disabled(current_page >= total_pages - 1);
-
-    serenity::CreateActionRow::Buttons(vec![prev_button, page_info, next_button].into())
+        total_pages,
+    )
 }
 
 async fn send_paginated_diff(
@@ -205,28 +168,10 @@ async fn send_paginated_diff(
     }
 
     let total_pages = responses.len();
-    let footer = format!("\n-# Sent by <@{}>", msg.author.id);
-    let first_page = &responses[0];
+    let buttons =
+        (total_pages > 1).then(|| create_pagination_buttons(0, total_pages, commit, None));
 
-    if first_page.len() + footer.len() > DISCORD_MESSAGE_LIMIT {
-        warn!("Diff response too long, skipping");
-        shared::record_embed(ctx, "git_diffs", false).await;
-        return false;
-    }
-
-    let content = format!("{}{}", first_page, footer);
-    let mut message_builder = serenity::CreateMessage::new()
-        .content(content)
-        .reference_message(msg)
-        .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
-
-    if total_pages > 1 {
-        let buttons = create_pagination_buttons(0, total_pages, commit, None);
-        message_builder =
-            message_builder.components(vec![serenity::CreateComponent::ActionRow(buttons)]);
-    }
-
-    shared::send_reply(ctx, msg, "git_diffs", message_builder).await
+    pagination::send_first_page(ctx, msg, "git_diffs", &responses[0], buttons).await
 }
 
 pub async fn handle_commit_diffs(
@@ -449,20 +394,17 @@ pub async fn handle_diff_pagination(
     let owner = colon_parts[1];
     let repo = colon_parts[2];
 
-    let (commit_filter_page, lock_user_id) = match colon_parts[3].rsplit_once(':') {
-        Some((cfp, uid)) if uid.parse::<u64>().is_ok() => (cfp, uid.parse::<u64>().ok()),
-        _ => (colon_parts[3], None),
-    };
+    let (commit_filter_page, lock_user_id) = pagination::split_lock_suffix(colon_parts[3]);
 
     if let Some(lock_uid) = lock_user_id
         && interaction.user.id.get() != lock_uid
     {
-        let response = serenity::CreateInteractionResponse::Message(
-            serenity::CreateInteractionResponseMessage::new()
-                .content("Only the original poster can navigate this diff.")
-                .ephemeral(true),
-        );
-        let _ = interaction.create_response(&ctx.http, response).await;
+        pagination::respond_ephemeral(
+            ctx,
+            interaction,
+            "Only the original poster can navigate this diff.",
+        )
+        .await;
         return;
     }
 
@@ -551,24 +493,6 @@ pub async fn handle_diff_pagination(
         return;
     }
 
-    let page_content = &chunked[new_page];
-    let total_pages = chunked.len();
-
-    let buttons = create_pagination_buttons(new_page, total_pages, &commit, lock_user_id);
-
-    let footer = extract_sent_by_footer(&interaction.message.content);
-    let content = match footer {
-        Some(f) => format!("{}{}", page_content, f),
-        None => page_content.to_string(),
-    };
-
-    let response = serenity::CreateInteractionResponse::UpdateMessage(
-        serenity::CreateInteractionResponseMessage::new()
-            .content(content)
-            .components(vec![serenity::CreateComponent::ActionRow(buttons)]),
-    );
-
-    if let Err(e) = interaction.create_response(&ctx.http, response).await {
-        error!("Failed to update message: {}", e);
-    }
+    let buttons = create_pagination_buttons(new_page, chunked.len(), &commit, lock_user_id);
+    pagination::update_to_page(ctx, interaction, &chunked[new_page], buttons).await;
 }

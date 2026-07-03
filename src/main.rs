@@ -55,6 +55,7 @@ impl serenity::EventHandler for Handler {
                 ..
             } => {
                 handle_diff_pagination(ctx, component).await;
+                handlers::handle_file_pagination(ctx, component).await;
             }
             serenity::FullEvent::GuildMemberAddition { new_member, .. } => {
                 handle_member_join(ctx, new_member, Some(&data.pool)).await;

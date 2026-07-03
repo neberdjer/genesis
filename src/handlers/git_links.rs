@@ -1,4 +1,5 @@
-use super::git_handler::GitFileLink;
+use super::file_pages;
+use super::git_handler::{FileResponse, GitFileLink};
 use super::shared::{self, SettingCheck};
 use crate::constants::{DISCORD_MESSAGE_LIMIT, TRUNCATED_MESSAGE_LIMIT};
 use poise::serenity_prelude as serenity;
@@ -28,6 +29,7 @@ async fn send_code_snippet(
         response
     } else {
         let truncate_at = TRUNCATED_MESSAGE_LIMIT.min(max_body.saturating_sub(30));
+        let truncate_at = shared::floor_char_boundary(&response, truncate_at);
         format!("{}...\n```\n(Content too long)", &response[..truncate_at])
     };
     let content = format!("{}{}", body, footer);
@@ -49,6 +51,7 @@ pub async fn handle_git_links(
         .split_whitespace()
         .filter(|word| is_git_platform_url(word))
         .filter_map(|word| GitFileLink::parse(clean_url(word)))
+        .filter(|link| !link.is_plain_markdown())
         .collect();
 
     if found_links.is_empty() {
@@ -72,9 +75,17 @@ pub async fn handle_git_links(
     let mut any_sent = false;
     let mut any_failed = false;
     for link in found_links {
-        match shared::spawn_blocking_fetch(move || link.format_response()).await {
-            Ok(response) => {
+        let fetch_link = link.clone();
+        match shared::spawn_blocking_fetch(move || fetch_link.format_response()).await {
+            Ok(FileResponse::Single(response)) => {
                 if send_code_snippet(ctx, msg, response).await {
+                    any_sent = true;
+                } else {
+                    any_failed = true;
+                }
+            }
+            Ok(FileResponse::Paged(pages)) => {
+                if file_pages::send_paginated_file(ctx, msg, &link, pages).await {
                     any_sent = true;
                 } else {
                     any_failed = true;

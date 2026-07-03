@@ -3,12 +3,17 @@ use crate::constants::{MAX_FILE_CHARS, MAX_FILE_FETCH_BYTES, SPACES_PER_TAB};
 use regex::Regex;
 use std::sync::OnceLock;
 
+pub enum FileResponse {
+    Single(String),
+    Paged(Vec<String>),
+}
+
 static GITHUB_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITLAB_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITEA_PATTERN: OnceLock<Regex> = OnceLock::new();
 static RUSTDOC_PATTERN: OnceLock<Regex> = OnceLock::new();
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GitPlatform {
     GitHub,
     GitLab,
@@ -16,8 +21,8 @@ pub enum GitPlatform {
     RustDoc,
 }
 
+#[derive(Clone)]
 pub struct GitFileLink {
-    #[allow(dead_code)]
     pub platform: GitPlatform,
     pub original_url: String,
     pub raw_url: String,
@@ -162,19 +167,38 @@ impl GitFileLink {
         })
     }
 
-    pub fn fetch_content(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn fetch_content(
+        &self,
+    ) -> Result<(String, bool), Box<dyn std::error::Error + Send + Sync>> {
         use std::io::Read as _;
+
         let response = ureq::get(&self.raw_url).call()?;
-        let mut content = String::new();
+        let mut bytes = Vec::new();
         response
             .into_reader()
-            .take(MAX_FILE_FETCH_BYTES as u64)
-            .read_to_string(&mut content)?;
+            .take(MAX_FILE_FETCH_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)?;
+
+        let truncated = bytes.len() > MAX_FILE_FETCH_BYTES;
+        if truncated {
+            bytes.truncate(MAX_FILE_FETCH_BYTES);
+        }
+
+        let content = match String::from_utf8(bytes) {
+            Ok(content) => content,
+            Err(e) if truncated => {
+                let valid = e.utf8_error().valid_up_to();
+                let mut bytes = e.into_bytes();
+                bytes.truncate(valid);
+                String::from_utf8(bytes)?
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         if self.platform == GitPlatform::RustDoc {
-            Ok(Self::strip_html(&content))
+            Ok((Self::strip_html(&content), truncated))
         } else {
-            Ok(content)
+            Ok((content, truncated))
         }
     }
 
@@ -275,9 +299,10 @@ impl GitFileLink {
     }
 
     pub fn extract_lines(&self, content: &str) -> Option<String> {
+        let start = self.start_line?;
         let lines: Vec<&str> = content.lines().collect();
 
-        let extracted = if let (Some(start), Some(end)) = (self.start_line, self.end_line) {
+        let extracted = if let Some(end) = self.end_line {
             let start_idx = (start as usize).saturating_sub(1);
             let end_idx = (end as usize).min(lines.len());
 
@@ -286,31 +311,39 @@ impl GitFileLink {
             }
 
             lines[start_idx..end_idx].join("\n")
-        } else if let Some(line) = self.start_line {
-            let idx = (line as usize).saturating_sub(1);
-            lines.get(idx)?.to_string()
         } else {
-            if self.get_language() == "md" {
-                return None;
-            }
-
-            if content.len() > MAX_FILE_CHARS {
-                return None;
-            }
-
-            content.to_string()
+            let idx = (start as usize).saturating_sub(1);
+            lines.get(idx)?.to_string()
         };
 
         Some(Self::unindent(&extracted))
     }
 
-    pub fn format_response(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let content = self.fetch_content()?;
-        let extracted = self
-            .extract_lines(&content)
-            .ok_or("File too long or invalid")?;
-        let language = self.get_language();
+    pub fn is_plain_markdown(&self) -> bool {
+        self.start_line.is_none() && self.get_language() == "md"
+    }
 
+    pub fn format_response(
+        &self,
+    ) -> Result<FileResponse, Box<dyn std::error::Error + Send + Sync>> {
+        let (content, truncated) = self.fetch_content()?;
+
+        if self.start_line.is_some() {
+            let extracted = self
+                .extract_lines(&content)
+                .ok_or("Requested lines are out of range")?;
+            return Ok(FileResponse::Single(self.format_snippet(&extracted)));
+        }
+
+        if content.len() <= MAX_FILE_CHARS {
+            let content = Self::unindent(&content);
+            return Ok(FileResponse::Single(self.format_snippet(&content)));
+        }
+
+        Ok(FileResponse::Paged(self.chunk_pages(&content, truncated)))
+    }
+
+    fn format_snippet(&self, extracted: &str) -> String {
         let line_info = match (self.start_line, self.end_line) {
             (Some(start), Some(end)) if start == end => format!(" Line {}", start),
             (Some(start), Some(end)) => format!(" Lines {}-{}", start, end),
@@ -318,12 +351,39 @@ impl GitFileLink {
             _ => String::new(),
         };
 
-        Ok(format!(
+        format!(
             "**{}:**{}\n```{}\n{}\n```",
             self.file_name,
             line_info,
-            language,
+            self.get_language(),
             extracted.replace("```", "`\\``")
-        ))
+        )
+    }
+
+    fn chunk_pages(&self, content: &str, truncated: bool) -> Vec<String> {
+        let escaped = content
+            .replace('\t', SPACES_PER_TAB)
+            .replace("```", "`\\``");
+
+        let mut pages = Vec::new();
+        let mut rest = escaped.as_str();
+        while !rest.is_empty() {
+            let mut cut = super::shared::floor_char_boundary(rest, MAX_FILE_CHARS);
+            if cut < rest.len()
+                && let Some(newline) = rest[..cut].rfind('\n')
+                && newline > 0
+            {
+                cut = newline + 1;
+            }
+            let (chunk, remaining) = rest.split_at(cut);
+            pages.push(self.format_snippet(chunk.trim_end_matches('\n')));
+            rest = remaining;
+        }
+
+        if truncated && let Some(last) = pages.last_mut() {
+            last.push_str("\n-# File truncated");
+        }
+
+        pages
     }
 }

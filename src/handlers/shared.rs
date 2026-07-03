@@ -176,6 +176,16 @@ pub enum SettingCheck {
     GitDiffs,
 }
 
+pub fn floor_char_boundary(text: &str, mut index: usize) -> usize {
+    if index >= text.len() {
+        return text.len();
+    }
+    while !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
 pub fn normalize_domain(domain: &str) -> String {
     let lower = domain.trim().to_ascii_lowercase();
     let stripped = lower
