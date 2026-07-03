@@ -625,3 +625,78 @@ pub async fn fetch_blocked_domains(
     };
     Ok(rows)
 }
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct Reminder {
+    pub id: i32,
+    pub user_id: String,
+    pub channel_id: String,
+    pub reminder: Option<String>,
+    pub remind_at: i64,
+}
+
+pub async fn add_reminder(
+    pool: &PgPool,
+    user_id: &str,
+    channel_id: &str,
+    reminder: Option<&str>,
+    remind_at: i64,
+) -> Result<i32, sqlx::Error> {
+    sqlx::query_scalar::<_, i32>(
+        r#"
+        INSERT INTO reminders (user_id, channel_id, reminder, remind_at)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .bind(channel_id)
+    .bind(reminder)
+    .bind(remind_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn count_reminders(pool: &PgPool, user_id: &str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reminders WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+}
+
+pub async fn list_reminders(pool: &PgPool, user_id: &str) -> Result<Vec<Reminder>, sqlx::Error> {
+    sqlx::query_as::<_, Reminder>("SELECT * FROM reminders WHERE user_id = $1 ORDER BY remind_at")
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn delete_user_reminder(
+    pool: &PgPool,
+    id: i32,
+    user_id: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM reminders WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn due_reminders(pool: &PgPool, now: i64) -> Result<Vec<Reminder>, sqlx::Error> {
+    sqlx::query_as::<_, Reminder>(
+        "SELECT * FROM reminders WHERE remind_at <= $1 ORDER BY remind_at",
+    )
+    .bind(now)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn delete_reminders(pool: &PgPool, ids: &[i32]) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM reminders WHERE id = ANY($1)")
+        .bind(ids)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

@@ -19,12 +19,6 @@ pub async fn instagram(
     ctx: Context<'_>,
     #[description = "Instagram post, reel, or share URL"] url: String,
 ) -> Result<(), Error> {
-    let data = ctx.data();
-    let pool = Some(data.pool.as_ref());
-    if !shared::pre_check_user(ctx.author().id, pool).await {
-        return deny(ctx, "You are blacklisted from using this bot.").await;
-    }
-
     if !shared::check_rate_limit(ctx.author().id, "instagram") {
         return deny(
             ctx,
@@ -76,12 +70,6 @@ pub async fn twitter(
     ctx: Context<'_>,
     #[description = "Twitter or X post URL"] url: String,
 ) -> Result<(), Error> {
-    let data = ctx.data();
-    let pool = Some(data.pool.as_ref());
-    if !shared::pre_check_user(ctx.author().id, pool).await {
-        return deny(ctx, "You are blacklisted from using this bot.").await;
-    }
-
     if !shared::check_rate_limit(ctx.author().id, "twitter") {
         return deny(
             ctx,
@@ -133,12 +121,6 @@ pub async fn tiktok(
     ctx: Context<'_>,
     #[description = "TikTok video, photo, or share URL"] url: String,
 ) -> Result<(), Error> {
-    let data = ctx.data();
-    let pool = Some(data.pool.as_ref());
-    if !shared::pre_check_user(ctx.author().id, pool).await {
-        return deny(ctx, "You are blacklisted from using this bot.").await;
-    }
-
     if !shared::check_rate_limit(ctx.author().id, "tiktok") {
         return deny(
             ctx,

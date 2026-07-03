@@ -2,6 +2,7 @@ pub mod general;
 pub mod git;
 pub mod media;
 pub mod moderation;
+pub mod remind;
 pub mod settings;
 pub mod timezone;
 pub mod utility;
@@ -24,6 +25,7 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
         media::twitter(),
         media::tiktok(),
         git::git(),
+        remind::reminder(),
         timezone::timezone(),
         settings::settings(),
         welcome::welcome(),

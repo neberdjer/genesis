@@ -72,6 +72,7 @@ impl serenity::EventHandler for Handler {
                 if !POLLER_STARTED.swap(true, Ordering::SeqCst) {
                     tokio::spawn(status_poller(ctx.clone()));
                     tokio::spawn(custom_hosts_poller(ctx.clone()));
+                    tokio::spawn(handlers::reminders::reminder_poller(ctx.clone()));
                 }
             }
             _ => {}
@@ -116,6 +117,11 @@ async fn record_command_usage(ctx: Context<'_>) {
 }
 
 async fn command_enabled_check(ctx: Context<'_>) -> Result<bool, Error> {
+    if !handlers::shared::pre_check_user(ctx.author().id, Some(ctx.data().pool.as_ref())).await {
+        reply_ephemeral(ctx, "You are blacklisted from using this bot.").await;
+        return Ok(false);
+    }
+
     let name = ctx.command().name.to_string();
     if !TOGGLEABLE_COMMANDS.contains(&name.as_str()) {
         return Ok(true);

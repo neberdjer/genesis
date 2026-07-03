@@ -44,6 +44,11 @@ pub const FEATURE_GROUPS: &[FeatureGroup] = &[
                 desc: "look up a user's local time and convert times between zones",
             },
             Feature {
+                icon: "chat",
+                title: "reminders",
+                desc: "set reminders with durations like 10m or 2d and get pinged when they're due",
+            },
+            Feature {
                 icon: "user",
                 title: "works anywhere",
                 desc: "add genesis to your own account and use the slash commands in any dm or group chat, not just servers",
@@ -162,6 +167,18 @@ pub const COMMAND_GROUPS: &[Group] = &[
         title: "utility",
         note: "",
         commands: &[
+            Command {
+                usage: "/reminder add <duration> [reminder]",
+                desc: "set a reminder (e.g. 10m, 1h30m, 2d), pings you when it's due",
+            },
+            Command {
+                usage: "/reminder list",
+                desc: "list your pending reminders",
+            },
+            Command {
+                usage: "/reminder remove <id>",
+                desc: "remove one of your reminders",
+            },
             Command {
                 usage: "/time <time> [from_tz] [to_tz]",
                 desc: "convert a time between timezones",

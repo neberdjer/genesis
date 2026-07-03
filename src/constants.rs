@@ -82,6 +82,12 @@ pub const WELCOME_RATE_LIMIT_SECONDS: u64 = 2;
 pub const DIFF_CACHE_MAX_ENTRIES: usize = 1000;
 pub const FILE_CACHE_MAX_ENTRIES: usize = 50;
 
+pub const REMINDER_POLL_SECONDS: u64 = 15;
+pub const REMINDER_MIN_SECONDS: u64 = 10;
+pub const REMINDER_MAX_SECONDS: u64 = 365 * 86400;
+pub const MAX_REMINDERS_PER_USER: i64 = 25;
+pub const MAX_REMINDER_CHARS: usize = 1000;
+
 pub const COMMAND_SCOPE_GLOBAL: &str = "global";
 
 pub const TOGGLEABLE_COMMANDS: &[&str] = &[

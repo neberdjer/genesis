@@ -22,11 +22,6 @@ pub async fn git(
     #[description = "Restrict pagination buttons to only you"] only_me: Option<bool>,
 ) -> Result<(), Error> {
     let data = ctx.data();
-    let pool = Some(data.pool.as_ref());
-    if !shared::pre_check_user(ctx.author().id, pool).await {
-        return deny(ctx, "You are blacklisted from using this bot.").await;
-    }
-
     let trimmed = url.trim();
 
     let gitea_hosts = db::list_git_hosts(&data.pool).await.unwrap_or_default();

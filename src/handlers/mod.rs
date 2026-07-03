@@ -12,6 +12,7 @@ pub mod git_diffs;
 pub mod git_links;
 pub mod instagram;
 pub mod mention;
+pub mod reminders;
 pub mod tiktok;
 pub mod twitter;
 pub mod welcome;

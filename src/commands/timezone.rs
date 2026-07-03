@@ -75,12 +75,6 @@ pub async fn timezone(
     ctx: Context<'_>,
     #[description = "User to look up (default: yourself)"] user: Option<serenity::User>,
 ) -> Result<(), Error> {
-    let data = ctx.data();
-    let pool = Some(data.pool.as_ref());
-    if !shared::pre_check_user(ctx.author().id, pool).await {
-        return deny(ctx, "You are blacklisted from using this bot.").await;
-    }
-
     if !shared::check_rate_limit(ctx.author().id, "timezone") {
         return deny(
             ctx,
