@@ -169,10 +169,14 @@ impl GitFileLink {
 
     pub fn fetch_content(
         &self,
-    ) -> Result<(String, bool), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Option<(String, bool)>, Box<dyn std::error::Error + Send + Sync>> {
         use std::io::Read as _;
 
-        let response = ureq::get(&self.raw_url).call()?;
+        let response = match ureq::get(&self.raw_url).call() {
+            Ok(response) => response,
+            Err(ureq::Error::Status(404, _)) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
         let mut bytes = Vec::new();
         response
             .into_reader()
@@ -196,9 +200,9 @@ impl GitFileLink {
         };
 
         if self.platform == GitPlatform::RustDoc {
-            Ok((Self::strip_html(&content), truncated))
+            Ok(Some((Self::strip_html(&content), truncated)))
         } else {
-            Ok((content, truncated))
+            Ok(Some((content, truncated)))
         }
     }
 
@@ -325,22 +329,26 @@ impl GitFileLink {
 
     pub fn format_response(
         &self,
-    ) -> Result<FileResponse, Box<dyn std::error::Error + Send + Sync>> {
-        let (content, truncated) = self.fetch_content()?;
+    ) -> Result<Option<FileResponse>, Box<dyn std::error::Error + Send + Sync>> {
+        let Some((content, truncated)) = self.fetch_content()? else {
+            return Ok(None);
+        };
 
         if self.start_line.is_some() {
             let extracted = self
                 .extract_lines(&content)
                 .ok_or("Requested lines are out of range")?;
-            return Ok(FileResponse::Single(self.format_snippet(&extracted)));
+            return Ok(Some(FileResponse::Single(self.format_snippet(&extracted))));
         }
 
         if content.len() <= MAX_FILE_CHARS {
             let content = Self::unindent(&content);
-            return Ok(FileResponse::Single(self.format_snippet(&content)));
+            return Ok(Some(FileResponse::Single(self.format_snippet(&content))));
         }
 
-        Ok(FileResponse::Paged(self.chunk_pages(&content, truncated)))
+        Ok(Some(FileResponse::Paged(
+            self.chunk_pages(&content, truncated),
+        )))
     }
 
     fn format_snippet(&self, extracted: &str) -> String {

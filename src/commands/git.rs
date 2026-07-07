@@ -62,9 +62,12 @@ async fn send_file(ctx: Context<'_>, link: GitFileLink, only_me: bool) -> Result
 
     let fetch_link = link.clone();
     let response = match shared::spawn_blocking_fetch(move || fetch_link.format_response()).await {
-        Ok(FileResponse::Single(r)) => r,
-        Ok(FileResponse::Paged(pages)) => {
+        Ok(Some(FileResponse::Single(r))) => r,
+        Ok(Some(FileResponse::Paged(pages))) => {
             return send_paged_file(ctx, &link, pages, only_me).await;
+        }
+        Ok(None) => {
+            return deny(ctx, "Could not find a file at that URL.").await;
         }
         Err(e) => {
             tracing::warn!("Failed to fetch git file via slash command: {}", e);

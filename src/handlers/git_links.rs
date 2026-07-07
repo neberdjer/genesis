@@ -77,20 +77,21 @@ pub async fn handle_git_links(
     for link in found_links {
         let fetch_link = link.clone();
         match shared::spawn_blocking_fetch(move || fetch_link.format_response()).await {
-            Ok(FileResponse::Single(response)) => {
+            Ok(Some(FileResponse::Single(response))) => {
                 if send_code_snippet(ctx, msg, response).await {
                     any_sent = true;
                 } else {
                     any_failed = true;
                 }
             }
-            Ok(FileResponse::Paged(pages)) => {
+            Ok(Some(FileResponse::Paged(pages))) => {
                 if file_pages::send_paginated_file(ctx, msg, &link, pages).await {
                     any_sent = true;
                 } else {
                     any_failed = true;
                 }
             }
+            Ok(None) => {}
             Err(e) => {
                 warn!("Failed to fetch git content: {}", e);
                 shared::record_embed(ctx, "git_links", false).await;

@@ -61,7 +61,7 @@ async fn page_for(key: &str, page: usize) -> Option<(String, usize, usize)> {
 
     let refreshed = shared::spawn_blocking_fetch(move || link.format_response())
         .await
-        .ok()?;
+        .ok()??;
     let pages = match refreshed {
         FileResponse::Paged(pages) if !pages.is_empty() => pages,
         FileResponse::Single(snippet) => vec![snippet],
