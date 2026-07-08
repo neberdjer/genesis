@@ -31,6 +31,52 @@ pub(super) fn ico(name: &str) -> Markup {
     inline_svg(svg, "ico")
 }
 
+fn is_http_url(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
+/// Render an attacker-controlled url as a link only when it uses an http(s)
+/// scheme; anything else (e.g. a `javascript:` uri) is shown as plain text.
+pub(super) fn link_or_code(url: &str) -> Markup {
+    html! {
+        @if is_http_url(url) {
+            a href=(url) rel="noopener noreferrer nofollow" { (url) }
+        } @else {
+            code { (url) }
+        }
+    }
+}
+
+pub(super) fn failure_rows(entries: &[crate::db::FailureEntry], show_guild: bool) -> Markup {
+    html! {
+        ul.audit-log {
+            @for e in entries {
+                li.audit-row {
+                    div.audit-head {
+                        span.audit-cat { (e.service) }
+                        span.audit-time {
+                            (e.code)
+                            @if show_guild {
+                                @if let Some(gid) = &e.guild_id {
+                                    " · server " (gid)
+                                }
+                            }
+                            " · " (e.at)
+                        }
+                    }
+                    div.audit-action {
+                        @if let Some(url) = &e.url {
+                            (link_or_code(url))
+                            br;
+                        }
+                        (e.detail)
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(super) fn pager(base: &str, page: usize, total_pages: usize) -> Markup {
     html! {
         @if total_pages > 1 {

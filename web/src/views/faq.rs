@@ -29,7 +29,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                         li { "tiktok videos and photo slideshows" }
                         li { "github and gitlab file snippets and commit diffs" }
                     }
-                    p { "it also has timezone tools. see the " a href="/features" { "features" } " page for the full list." }
+                    p { "it also has timezone tools and reminders. see the " a href="/features" { "features" } " page for the full list." }
                 }
             }
             details.faq-item {
@@ -143,10 +143,14 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
             details.faq-item {
                 summary.faq-q { "what data does it store?" }
                 div.faq-a {
-                    p { "only your server's settings: which services are enabled and any domains you block." }
                     p {
-                        "it does not store message content, the links you post, or any media; embeds are "
-                        "built on demand. see the " a href="/privacy" { "privacy policy" } " for details."
+                        "your server's settings (which services are enabled, any domains you block), any "
+                        "reminders you've set until they fire, and a 30-day record of links that failed "
+                        "to embed."
+                    }
+                    p {
+                        "it does not store message content or any media; embeds are built on demand. see "
+                        "the " a href="/privacy" { "privacy policy" } " for details."
                     }
                 }
             }

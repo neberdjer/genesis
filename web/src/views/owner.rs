@@ -1,7 +1,7 @@
-use super::layout::{layout, pager};
+use super::layout::{failure_rows, layout, pager};
 use crate::catalog;
 use crate::config;
-use crate::db::{BlacklistEntry, BotStatus};
+use crate::db::{BlacklistEntry, BotStatus, FailureEntry};
 use crate::discord::{self, User};
 use maud::{Markup, html};
 use std::collections::HashSet;
@@ -12,6 +12,7 @@ const TABS: &[(&str, &str)] = &[
     ("domains", "global domains"),
     ("commands", "commands"),
     ("status", "bot status"),
+    ("failures", "failures"),
 ];
 
 fn tabs(active: &str) -> Markup {
@@ -249,6 +250,26 @@ fn status_panel(status: Option<&BotStatus>) -> Markup {
     }
 }
 
+fn failures_panel(
+    entries: &[FailureEntry],
+    page: usize,
+    total_pages: usize,
+    total: usize,
+) -> Markup {
+    html! {
+        p.muted {
+            "embed failures from every server over the last 30 days, newest first. "
+            (total) " recorded."
+        }
+        @if entries.is_empty() {
+            p.muted { "no failures recorded." }
+        } @else {
+            (failure_rows(entries, true))
+            (pager("/owner?tab=failures", page, total_pages))
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn owner(
     user: &User,
@@ -265,6 +286,7 @@ pub fn owner(
     page: usize,
     total_pages: usize,
     total: usize,
+    failures: &[FailureEntry],
     saved: bool,
 ) -> Markup {
     let body = html! {
@@ -285,6 +307,7 @@ pub fn owner(
                 "domains" => (domains_panel(global_domains, git_hosts, media_hosts)),
                 "commands" => (commands_panel(disabled_commands)),
                 "status" => (status_panel(status)),
+                "failures" => (failures_panel(failures, page, total_pages, total)),
                 _ => (blacklist_panel(users)),
             }
         }

@@ -1,6 +1,6 @@
-use super::layout::{layout, pager};
+use super::layout::{failure_rows, layout, pager};
 use crate::catalog::{DOMAIN_GROUPS, toggleable_commands};
-use crate::db::{AuditEntry, SERVICES, Settings};
+use crate::db::{AuditEntry, FailureEntry, SERVICES, Settings};
 use crate::discord::{DashGuild, GuildChannel, GuildRole, User};
 use maud::{Markup, html};
 use std::collections::HashSet;
@@ -11,6 +11,7 @@ const TABS: &[(&str, &str)] = &[
     ("welcome", "welcome"),
     ("domains", "blocked domains"),
     ("audit", "audit log"),
+    ("failures", "failure reports"),
     ("danger", "danger zone"),
 ];
 
@@ -204,6 +205,47 @@ fn audit_panel(entries: &[AuditEntry], guild_id: &str, page: usize, total_pages:
     }
 }
 
+fn failures_panel(
+    guild: &DashGuild,
+    settings: &Settings,
+    channels: &[GuildChannel],
+    entries: &[FailureEntry],
+    page: usize,
+    total_pages: usize,
+) -> Markup {
+    let selected = settings.report_channel_id.as_deref();
+    html! {
+        p.muted {
+            "links genesis failed to embed in this server over the last 30 days, and an optional "
+            "channel where new failures are posted as they happen."
+        }
+        form.config-form method="post" action=(format!("/dashboard/{}/report-channel", guild.id)) {
+            div.field {
+                label for="report-channel" { "report channel" }
+                select #report-channel name="channel_id" {
+                    option value="" selected[selected.is_none()] { "none (reports off)" }
+                    @for c in channels {
+                        option value=(c.id) selected[selected == Some(c.id.as_str())] {
+                            "#" (c.name)
+                        }
+                    }
+                }
+                @if channels.is_empty() {
+                    p.field-hint { "no channels found, or the bot can't view them." }
+                }
+            }
+            div { button.btn.primary type="submit" { "save report channel" } }
+        }
+
+        @if entries.is_empty() {
+            p.muted { "no failures recorded." }
+        } @else {
+            (failure_rows(entries, false))
+            (pager(&format!("/dashboard/{}?tab=failures", guild.id), page, total_pages))
+        }
+    }
+}
+
 fn danger_panel(guild: &DashGuild) -> Markup {
     html! {
         p.muted {
@@ -233,6 +275,9 @@ pub fn guild_config(
     audit: &[AuditEntry],
     audit_page: usize,
     audit_total_pages: usize,
+    failures: &[FailureEntry],
+    failure_page: usize,
+    failure_total_pages: usize,
     saved: bool,
 ) -> Markup {
     let body = html! {
@@ -256,6 +301,14 @@ pub fn guild_config(
                 "welcome" => (welcome_panel(guild, settings, channels, roles)),
                 "domains" => (domains_panel(guild, domains, git_hosts, media_hosts)),
                 "audit" => (audit_panel(audit, &guild.id, audit_page, audit_total_pages)),
+                "failures" => (failures_panel(
+                    guild,
+                    settings,
+                    channels,
+                    failures,
+                    failure_page,
+                    failure_total_pages,
+                )),
                 "danger" => (danger_panel(guild)),
                 _ => (services_panel(guild, settings)),
             }

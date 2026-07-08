@@ -8,7 +8,7 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
         div.legal {
             div.page-intro {
                 h1 { "privacy policy" }
-                p.muted { "last updated 20 june 2026" }
+                p.muted { "last updated 8 july 2026" }
             }
 
             p {
@@ -20,9 +20,9 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
             h2.faq-section { "what genesis reads" }
             p {
                 "to find supported links, genesis reads the text of messages in servers it's in "
-                "(discord's “message content” permission). this happens in memory, as messages arrive, "
-                "purely to spot links worth re-embedding. message text is never written to a database "
-                "or a log."
+                "(discord's “message content” permission). this happens in memory, as messages arrive "
+                "or are edited, purely to spot links worth re-embedding. message text is never written "
+                "to a database or a log."
             }
             p {
                 "if a server turns on reply cleanup, genesis also reads that server's audit log when a "
@@ -36,28 +36,45 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
                 "(server, channel, role, and user ids) rather than names:"
             }
             ul {
-                li { "per-server settings: which services are enabled, and your welcome message, channel, and auto-role" }
+                li { "per-server settings: which services are enabled, your welcome message, channel, and auto-role, and an optional channel for embed-failure reports" }
                 li { "domains you've blocked, per server and globally" }
                 li { "which commands are turned off, per server or globally" }
                 li { "self-hosted git hosts an operator has added, and the bot's configured status" }
                 li { "blacklisted user and server ids, with an optional reason" }
+                li { "reminders you set: your user id, the channel to ping you in, when to fire, and the reminder text you typed. a reminder is deleted as soon as it fires (snoozing simply reschedules it)" }
+                li { "failed embeds: details of links that failed to embed, kept for up to 30 days so failures can be diagnosed — see failure reports below" }
             }
             p {
                 "when a setting is changed, we also store the discord id of whoever changed it, so it "
-                "can be audited. that is the only place a personal id is recorded."
+                "can be audited. beyond that, the only personal id we keep is yours on reminders "
+                "you've set."
             }
 
             h2.faq-section { "usage stats" }
             p {
                 "genesis keeps anonymous, aggregate counters: how many times each command has been run, "
-                "and how many embeds per platform succeeded or failed. these are plain totals, with no "
-                "link to any user, server, message, or link."
+                "and how many embeds per platform succeeded or failed. the counters themselves are plain "
+                "totals, with no link to any user, server, message, or link. failed embeds are also "
+                "recorded individually — see failure reports below."
+            }
+
+            h2.faq-section { "failure reports" }
+            p {
+                "when a link fails to embed, genesis records the service, an error code, the link, the "
+                "server id, and a short error message, and deletes the record after 30 days. server "
+                "admins can set a report channel (" code { "/settings report_channel" } " or the "
+                "dashboard) that receives that server's failures. the bot's operator also has a global "
+                "report channel and a dashboard view that receive these reports — including the failed "
+                "link — from every server, so recurring breakage can be spotted and fixed. successful "
+                "embeds are never recorded this way."
             }
 
             h2.faq-section { "what we don't store" }
             p {
-                "we do not store message content, the links you post, the media in them, your username, "
-                "or your message history. media is downloaded only long enough to re-upload it to discord "
+                "we do not store message content, your username, or your message history, and links "
+                "that embed successfully are never kept. the two exceptions are things described above: "
+                "the text of a reminder you set (stored until it fires), and links that failed to embed "
+                "(kept for 30 days). media is downloaded only long enough to re-upload it to discord "
                 "and is then discarded. the only short-lived in-memory state is a git diff cache kept for "
                 "a few minutes and, where reply cleanup is on, a brief list of recent replies (ids only, "
                 "about a minute) so they can be removed if a moderator deletes the original."
@@ -88,9 +105,12 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
 
             h2.faq-section { "keeping and removing data" }
             p {
-                "settings stay until they're removed. from the dashboard you can wipe everything stored "
-                "for a server (its danger zone tab), or delete all data about yourself (the dashboard's "
-                "your-data section); both sign you out when done. removing the bot from a server does not "
+                "settings stay until they're removed. reminders delete themselves when they fire and "
+                "can be removed early with " code { "/reminder remove" } "; embed-failure records expire "
+                "after 30 days on their own. from the dashboard you can wipe everything stored for a "
+                "server including its failure records (its danger zone tab), or delete all data about "
+                "yourself including your pending reminders (the dashboard's your-data section); both "
+                "sign you out when done. removing the bot from a server does not "
                 "by itself erase its settings. per-server blocked domains can also be cleared with "
                 code { "/settings unblock_domain" } ", or you can ask us."
             }

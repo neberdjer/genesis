@@ -26,6 +26,7 @@ pub struct Settings {
     pub welcome_channel_id: Option<String>,
     pub welcome_message: String,
     pub welcome_role_id: Option<String>,
+    pub report_channel_id: Option<String>,
 }
 
 impl Settings {
@@ -42,6 +43,7 @@ impl Settings {
             welcome_channel_id: None,
             welcome_message: DEFAULT_WELCOME.to_string(),
             welcome_role_id: None,
+            report_channel_id: None,
         }
     }
 }
@@ -74,7 +76,8 @@ pub async fn get_settings(pool: &Pool, guild_id: &str) -> Result<Settings, sqlx:
         r#"
         SELECT git_diffs_enabled, git_compares_enabled, git_links_enabled,
                twitter_enabled, tiktok_enabled, instagram_enabled, reply_cleanup_enabled,
-               welcome_enabled, welcome_channel_id, welcome_message, welcome_role_id
+               welcome_enabled, welcome_channel_id, welcome_message, welcome_role_id,
+               report_channel_id
         FROM server_settings
         WHERE guild_id = $1
         "#,
@@ -98,6 +101,7 @@ pub async fn get_settings(pool: &Pool, guild_id: &str) -> Result<Settings, sqlx:
                 .try_get::<Option<String>, _>("welcome_message")?
                 .unwrap_or_else(|| DEFAULT_WELCOME.to_string()),
             welcome_role_id: r.try_get("welcome_role_id")?,
+            report_channel_id: r.try_get("report_channel_id")?,
         },
         None => Settings::defaults(),
     })
@@ -187,11 +191,19 @@ pub async fn delete_server_data(pool: &Pool, guild_id: &str) -> Result<(), sqlx:
         .bind(guild_id)
         .execute(&mut *tx)
         .await?;
+    sqlx::query("DELETE FROM embed_failures WHERE guild_id = $1")
+        .bind(guild_id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await
 }
 
 pub async fn delete_user_data(pool: &Pool, user_id: &str) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM config_audit WHERE actor_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM reminders WHERE user_id = $1")
         .bind(user_id)
         .execute(pool)
         .await?;
@@ -601,4 +613,105 @@ pub async fn list_audit(
             at: r.try_get("at").unwrap_or_default(),
         })
         .collect())
+}
+
+pub async fn set_report_channel(
+    pool: &Pool,
+    guild_id: &str,
+    channel_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings (guild_id, report_channel_id)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id) DO UPDATE SET
+            report_channel_id = $2,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(channel_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub struct FailureEntry {
+    pub service: String,
+    pub code: String,
+    pub url: Option<String>,
+    pub guild_id: Option<String>,
+    pub detail: String,
+    pub at: String,
+}
+
+fn failure_from_row(r: sqlx::postgres::PgRow) -> FailureEntry {
+    FailureEntry {
+        service: r.try_get("service").unwrap_or_default(),
+        code: r.try_get("code").unwrap_or_default(),
+        url: r.try_get("url").unwrap_or_default(),
+        guild_id: r.try_get("guild_id").unwrap_or_default(),
+        detail: r.try_get("detail").unwrap_or_default(),
+        at: r.try_get("at").unwrap_or_default(),
+    }
+}
+
+pub async fn count_failures(pool: &Pool) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query("SELECT COUNT(*) AS n FROM embed_failures")
+        .fetch_one(pool)
+        .await?;
+    row.try_get("n")
+}
+
+pub async fn list_failures(
+    pool: &Pool,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<FailureEntry>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT service, code, url, guild_id, detail, to_char(created_at, 'YYYY-MM-DD HH24:MI') AS at
+        FROM embed_failures
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
+        "#,
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(failure_from_row).collect())
+}
+
+pub async fn count_guild_failures(pool: &Pool, guild_id: &str) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query("SELECT COUNT(*) AS n FROM embed_failures WHERE guild_id = $1")
+        .bind(guild_id)
+        .fetch_one(pool)
+        .await?;
+    row.try_get("n")
+}
+
+pub async fn list_guild_failures(
+    pool: &Pool,
+    guild_id: &str,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<FailureEntry>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT service, code, url, guild_id, detail, to_char(created_at, 'YYYY-MM-DD HH24:MI') AS at
+        FROM embed_failures
+        WHERE guild_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+        "#,
+    )
+    .bind(guild_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(failure_from_row).collect())
 }

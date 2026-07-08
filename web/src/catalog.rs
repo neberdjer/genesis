@@ -218,6 +218,10 @@ pub const COMMAND_GROUPS: &[Group] = &[
                 desc: "delete the bot's reply if a mod removes the original message within a minute",
             },
             Command {
+                usage: "/settings report_channel [channel]",
+                desc: "send embed-failure reports (the link and the error) to a channel",
+            },
+            Command {
                 usage: "/settings block_domain <domain>",
                 desc: "block a domain in this server",
             },

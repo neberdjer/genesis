@@ -8,7 +8,7 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
         div.legal {
             div.page-intro {
                 h1 { "terms of service" }
-                p.muted { "last updated 20 june 2026" }
+                p.muted { "last updated 8 july 2026" }
             }
 
             p {
@@ -18,7 +18,7 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
 
             h2.faq-section { "what genesis does" }
             p {
-                "when a service is enabled, genesis watches for supported links and, when it finds one, "
+                "when a service is enabled, genesis watches for supported links in new and edited messages and, when it finds one, "
                 "replies with a clean embed in its place. it does this automatically; you don't run a "
                 "command each time."
             }
@@ -31,12 +31,17 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
                 li { "github, gitlab, and self-hosted git hosts: it posts file snippets and commit or compare diffs." }
                 li {
                     "utility commands such as " code { "/git" } ", " code { "/timezone" } ", "
-                    code { "/time" } ", " code { "/stats" } ", and " code { "/checkperms" } "."
+                    code { "/time" } ", " code { "/reminder" } ", " code { "/stats" } ", and "
+                    code { "/checkperms" } "."
                 }
                 li { "optional welcome messages and an auto-assigned role for new members." }
                 li {
                     "optional reply cleanup: if a moderator deletes your original message within a minute, "
                     "genesis removes its own reply to it as well."
+                }
+                li {
+                    "optional embed-failure reports: admins can pick a channel where genesis posts links "
+                    "it failed to embed and why."
                 }
                 li {
                     "moderation commands (" code { "/ban" } ", " code { "/kick" } ") for users who already "

@@ -126,6 +126,10 @@ async fn main() {
         .route("/dashboard/{guild_id}", get(guild_config))
         .route("/dashboard/{guild_id}/settings", post(save_settings))
         .route("/dashboard/{guild_id}/welcome", post(save_welcome))
+        .route(
+            "/dashboard/{guild_id}/report-channel",
+            post(save_report_channel),
+        )
         .route("/dashboard/{guild_id}/domains", post(save_domains))
         .route("/dashboard/{guild_id}/commands", post(save_commands))
         .route("/dashboard/{guild_id}/delete", post(delete_server))
@@ -405,6 +409,7 @@ async fn guild_config(
         Some("welcome") => "welcome",
         Some("domains") => "domains",
         Some("audit") => "audit",
+        Some("failures") => "failures",
         Some("danger") => "danger",
         _ => "services",
     };
@@ -421,6 +426,9 @@ async fn guild_config(
     let mut audit_log = Vec::new();
     let mut audit_page = 1usize;
     let mut audit_total_pages = 1usize;
+    let mut failures = Vec::new();
+    let mut failure_page = 1usize;
+    let mut failure_total_pages = 1usize;
     match tab {
         "commands" => {
             disabled_commands = db::list_disabled_commands(&state.pool, &guild_id)
@@ -457,6 +465,21 @@ async fn guild_config(
                 .await
                 .unwrap_or_default();
         }
+        "failures" => {
+            let total = db::count_guild_failures(&state.pool, &guild_id)
+                .await
+                .unwrap_or(0)
+                .max(0) as usize;
+            let (p, tp, offset) = paginate(&query, total);
+            failure_page = p;
+            failure_total_pages = tp;
+            let (f, c) = tokio::join!(
+                db::list_guild_failures(&state.pool, &guild_id, PAGE_SIZE as i64, offset as i64),
+                discord::guild_channels(&state.http, &state.config, &guild_id),
+            );
+            failures = f.unwrap_or_default();
+            channels = c.unwrap_or_default();
+        }
         _ => {}
     }
 
@@ -476,6 +499,9 @@ async fn guild_config(
             &audit_log,
             audit_page,
             audit_total_pages,
+            &failures,
+            failure_page,
+            failure_total_pages,
             saved,
         )),
     )
@@ -700,6 +726,57 @@ async fn save_welcome(
     }
 }
 
+#[derive(serde::Deserialize)]
+struct ReportChannelForm {
+    #[serde(default)]
+    channel_id: String,
+}
+
+async fn save_report_channel(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Path(guild_id): Path<String>,
+    Form(form): Form<ReportChannelForm>,
+) -> Response {
+    let Some(session) = session::read_session(&jar) else {
+        return Redirect::to("/login").into_response();
+    };
+    let access = load_guild(&state, &session, &guild_id).await;
+    if let Some(resp) = deny_mutation(
+        &access,
+        &session,
+        &format!("/dashboard/{}?tab=failures", guild_id),
+    ) {
+        return resp;
+    }
+
+    let old = state.pool_settings(&guild_id).await;
+    let channel = snowflake(&form.channel_id);
+
+    let dest = format!("/dashboard/{}?tab=failures", guild_id);
+    match db::set_report_channel(&state.pool, &guild_id, channel).await {
+        Ok(()) => {
+            if old.report_channel_id.as_deref() != channel {
+                let action = if channel.is_some() {
+                    "changed report channel"
+                } else {
+                    "disabled failure reports"
+                };
+                audit(&state, &guild_id, &session, "reports", action).await;
+            }
+            (
+                session::set_saved(jar, state.config.cookie_secure),
+                Redirect::to(&dest),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!("set_report_channel failed: {}", e);
+            Redirect::to(&dest).into_response()
+        }
+    }
+}
+
 async fn save_domains(
     State(state): State<AppState>,
     jar: PrivateCookieJar,
@@ -868,6 +945,7 @@ async fn owner_page(
         Some("domains") => "domains",
         Some("commands") => "commands",
         Some("status") => "status",
+        Some("failures") => "failures",
         _ => "blacklist",
     };
     let (saved, jar) = session::take_saved(jar);
@@ -884,6 +962,7 @@ async fn owner_page(
     let mut page = 1usize;
     let mut total_pages = 1usize;
     let mut total = 0usize;
+    let mut failures = Vec::new();
     match tab {
         "servers" => {
             let (all, bl) =
@@ -925,6 +1004,15 @@ async fn owner_page(
         "status" => {
             status = db::get_bot_status(&state.pool).await.ok().flatten();
         }
+        "failures" => {
+            total = db::count_failures(&state.pool).await.unwrap_or(0).max(0) as usize;
+            let (p, tp, offset) = paginate(&query, total);
+            page = p;
+            total_pages = tp;
+            failures = db::list_failures(&state.pool, PAGE_SIZE as i64, offset as i64)
+                .await
+                .unwrap_or_default();
+        }
         _ => {
             users = db::list_user_blacklist(&state.pool)
                 .await
@@ -949,6 +1037,7 @@ async fn owner_page(
             page,
             total_pages,
             total,
+            &failures,
             saved,
         )),
     )
