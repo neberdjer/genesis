@@ -1,7 +1,8 @@
 use crate::constants::{
     EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, FAILED_EMBED_REACTION,
-    HANDLED_MESSAGE_TTL_SECONDS, MAX_HANDLED_MESSAGE_ENTRIES, MAX_RATE_LIMIT_ENTRIES,
-    RATE_LIMIT_SECONDS,
+    HANDLED_MESSAGE_TTL_SECONDS, MAX_FAILURE_DETAIL_CHARS, MAX_HANDLED_MESSAGE_ENTRIES,
+    MAX_RATE_LIMIT_ENTRIES, MAX_REPORT_DEDUP_ENTRIES, META_REPORT_CHANNEL, RATE_LIMIT_SECONDS,
+    REPORT_DEDUP_SECONDS,
 };
 use crate::db;
 use poise::serenity_prelude as serenity;
@@ -170,6 +171,114 @@ pub fn was_message_handled(id: serenity::MessageId) -> bool {
     })
 }
 
+static REPORT_DEDUP: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+
+fn should_report(scope: &str, service: &str, code: &str) -> bool {
+    let dedup = REPORT_DEDUP.get_or_init(|| Mutex::new(HashMap::new()));
+    let Ok(mut map) = dedup.lock() else {
+        return false;
+    };
+
+    let key = format!("{}:{}:{}", scope, service, code);
+    if let Some(last) = map.get(&key)
+        && last.elapsed().as_secs() < REPORT_DEDUP_SECONDS
+    {
+        return false;
+    }
+
+    evict_for_insert(
+        &mut map,
+        MAX_REPORT_DEDUP_ENTRIES,
+        REPORT_DEDUP_SECONDS,
+        |t| *t,
+    );
+    map.insert(key, Instant::now());
+    true
+}
+
+async fn send_report(ctx: &serenity::Context, channel: &str, content: &str) {
+    let Ok(channel_id) = channel.parse::<u64>() else {
+        return;
+    };
+    let message = serenity::CreateMessage::new()
+        .content(content)
+        .allowed_mentions(serenity::CreateAllowedMentions::new());
+    if let Err(e) = serenity::GenericChannelId::new(channel_id)
+        .send_message(&ctx.http, message)
+        .await
+    {
+        warn!(
+            "Failed to send failure report to channel {}: {}",
+            channel_id, e
+        );
+    }
+}
+
+pub fn report_failure(
+    ctx: &serenity::Context,
+    guild_id: Option<serenity::GuildId>,
+    service: &str,
+    code: &str,
+    url: Option<&str>,
+    detail: &str,
+) {
+    let ctx = ctx.clone();
+    let guild_id = guild_id.map(|g| g.to_string());
+    let service = service.to_string();
+    let code = code.to_string();
+    let url = url.map(str::to_string);
+    let mut detail = detail.replace('\n', " ");
+    detail.truncate(floor_char_boundary(&detail, MAX_FAILURE_DETAIL_CHARS));
+
+    tokio::spawn(async move {
+        let data = ctx.data::<crate::Data>();
+        db::record_embed(&data.pool, &service, false).await;
+        db::record_failure(
+            &data.pool,
+            &service,
+            &code,
+            url.as_deref(),
+            guild_id.as_deref(),
+            &detail,
+        )
+        .await;
+
+        let guild_channel = match &guild_id {
+            Some(gid) if should_report(gid, &service, &code) => {
+                db::get_server_settings(&data.pool, gid)
+                    .await
+                    .ok()
+                    .and_then(|s| s.report_channel_id)
+            }
+            _ => None,
+        };
+        let global_channel = if should_report("global", &service, &code) {
+            db::get_meta(&data.pool, META_REPORT_CHANNEL)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+
+        if guild_channel.is_none() && global_channel.is_none() {
+            return;
+        }
+
+        let content = match &url {
+            Some(url) => format!(
+                "**{}** failed with `{}`\n<{}>\n-# {}",
+                service, code, url, detail
+            ),
+            None => format!("**{}** failed with `{}`\n-# {}", service, code, detail),
+        };
+
+        for channel in [guild_channel, global_channel].into_iter().flatten() {
+            send_report(&ctx, &channel, &content).await;
+        }
+    });
+}
+
 pub async fn send_reply(
     ctx: &serenity::Context,
     msg: &serenity::Message,
@@ -185,7 +294,14 @@ pub async fn send_reply(
         }
         Err(e) => {
             warn!("Failed to send reply in channel {}: {}", msg.channel_id, e);
-            record_embed(ctx, service, false).await;
+            report_failure(
+                ctx,
+                msg.guild_id,
+                service,
+                crate::constants::FAILURE_SEND,
+                None,
+                &e.to_string(),
+            );
             false
         }
     }

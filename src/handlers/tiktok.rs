@@ -1,6 +1,6 @@
 use super::shared::{self, SettingCheck};
 use super::tiktok_handler::TikTokPost;
-use crate::constants::{TIKTOK_ACCENT_COLOR, TIKTOK_DOWNLOAD_UA};
+use crate::constants::{FAILURE_FETCH, TIKTOK_ACCENT_COLOR, TIKTOK_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -146,7 +146,14 @@ pub async fn handle_tiktok_links(
             }
             Err(e) => {
                 warn!("Failed to fetch TikTok {}: {}", video_url, e);
-                shared::record_embed(ctx, "tiktok", false).await;
+                shared::report_failure(
+                    ctx,
+                    msg.guild_id,
+                    "tiktok",
+                    FAILURE_FETCH,
+                    Some(&video_url),
+                    &e.to_string(),
+                );
                 any_failed = true;
             }
         }

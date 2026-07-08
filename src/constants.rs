@@ -80,6 +80,14 @@ pub const RATE_LIMIT_SECONDS: u64 = 10;
 pub const MAX_RATE_LIMIT_ENTRIES: usize = 10_000;
 pub const HANDLED_MESSAGE_TTL_SECONDS: u64 = 3600;
 pub const MAX_HANDLED_MESSAGE_ENTRIES: usize = 10_000;
+
+pub const FAILURE_FETCH: &str = "fetch_failed";
+pub const FAILURE_SEND: &str = "send_failed";
+pub const FAILURE_TOO_LONG: &str = "too_long";
+pub const META_REPORT_CHANNEL: &str = "report_channel";
+pub const REPORT_DEDUP_SECONDS: u64 = 600;
+pub const MAX_REPORT_DEDUP_ENTRIES: usize = 1000;
+pub const MAX_FAILURE_DETAIL_CHARS: usize = 300;
 pub const WELCOME_RATE_LIMIT_SECONDS: u64 = 2;
 pub const DIFF_CACHE_MAX_ENTRIES: usize = 1000;
 pub const FILE_CACHE_MAX_ENTRIES: usize = 50;

@@ -106,6 +106,7 @@ fn full_command_list() -> Vec<poise::Command<Data, Error>> {
     let mut commands = commands::all_commands();
     commands.push(help());
     commands.push(register_commands());
+    commands.push(report_channel_global());
     commands
 }
 
@@ -399,6 +400,25 @@ async fn help(
         prefix
     ));
     ctx.say(lines.join("\n")).await?;
+    Ok(())
+}
+
+#[poise::command(prefix_command, owners_only)]
+async fn report_channel_global(ctx: Context<'_>, #[flag] clear: bool) -> Result<(), Error> {
+    let pool = &ctx.data().pool;
+    if clear {
+        db::delete_meta(pool, constants::META_REPORT_CHANNEL).await?;
+        ctx.say("Global failure reporting disabled.").await?;
+    } else {
+        db::set_meta(
+            pool,
+            constants::META_REPORT_CHANNEL,
+            &ctx.channel_id().to_string(),
+        )
+        .await?;
+        ctx.say("Global embed failure reports will be sent to this channel.")
+            .await?;
+    }
     Ok(())
 }
 

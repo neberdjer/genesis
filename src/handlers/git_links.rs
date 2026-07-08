@@ -1,7 +1,7 @@
 use super::file_pages;
 use super::git_handler::{FileResponse, GitFileLink};
 use super::shared::{self, SettingCheck};
-use crate::constants::{DISCORD_MESSAGE_LIMIT, TRUNCATED_MESSAGE_LIMIT};
+use crate::constants::{DISCORD_MESSAGE_LIMIT, FAILURE_FETCH, TRUNCATED_MESSAGE_LIMIT};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::warn;
@@ -94,7 +94,14 @@ pub async fn handle_git_links(
             Ok(None) => {}
             Err(e) => {
                 warn!("Failed to fetch git content: {}", e);
-                shared::record_embed(ctx, "git_links", false).await;
+                shared::report_failure(
+                    ctx,
+                    msg.guild_id,
+                    "git_links",
+                    FAILURE_FETCH,
+                    Some(&link.original_url),
+                    &e.to_string(),
+                );
                 any_failed = true;
             }
         }

@@ -15,6 +15,7 @@ pub struct ServerSettings {
     pub tiktok_enabled: bool,
     pub instagram_enabled: bool,
     pub reply_cleanup_enabled: bool,
+    pub report_channel_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -144,7 +145,7 @@ pub async fn get_server_settings(
 ) -> Result<ServerSettings, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled, tiktok_enabled, instagram_enabled, reply_cleanup_enabled
+        SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled, tiktok_enabled, instagram_enabled, reply_cleanup_enabled, report_channel_id
         FROM server_settings
         WHERE guild_id = $1
         "#,
@@ -163,6 +164,7 @@ pub async fn get_server_settings(
             tiktok_enabled: row.try_get("tiktok_enabled")?,
             instagram_enabled: row.try_get("instagram_enabled")?,
             reply_cleanup_enabled: row.try_get("reply_cleanup_enabled")?,
+            report_channel_id: row.try_get("report_channel_id")?,
         })
     } else {
         Ok(ServerSettings {
@@ -174,6 +176,7 @@ pub async fn get_server_settings(
             tiktok_enabled: true,
             instagram_enabled: true,
             reply_cleanup_enabled: false,
+            report_channel_id: None,
         })
     }
 }
@@ -721,4 +724,61 @@ pub async fn set_meta(pool: &PgPool, key: &str, value: &str) -> Result<(), sqlx:
     .execute(pool)
     .await?;
     Ok(())
+}
+
+pub async fn delete_meta(pool: &PgPool, key: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM bot_meta WHERE key = $1")
+        .bind(key)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn set_report_channel(
+    pool: &PgPool,
+    guild_id: &str,
+    channel_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings (guild_id, report_channel_id)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET report_channel_id = $2, updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(channel_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn record_failure(
+    pool: &PgPool,
+    service: &str,
+    code: &str,
+    url: Option<&str>,
+    guild_id: Option<&str>,
+    detail: &str,
+) {
+    let result = sqlx::query(
+        r#"
+        WITH ins AS (
+            INSERT INTO embed_failures (service, code, url, guild_id, detail)
+            VALUES ($1, $2, $3, $4, $5)
+        )
+        DELETE FROM embed_failures WHERE created_at < NOW() - INTERVAL '30 days'
+        "#,
+    )
+    .bind(service)
+    .bind(code)
+    .bind(url)
+    .bind(guild_id)
+    .bind(detail)
+    .execute(pool)
+    .await;
+    if let Err(e) = result {
+        warn!("Failed to record embed failure: {}", e);
+    }
 }

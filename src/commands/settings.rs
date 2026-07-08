@@ -13,6 +13,7 @@ use poise::serenity_prelude as serenity;
         "command",
         "commands",
         "reply_cleanup",
+        "report_channel",
         "block_domain",
         "unblock_domain",
         "blocked_domains"
@@ -25,6 +26,7 @@ pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
          - `/settings command` - enable or disable a command in this server\n\
          - `/settings commands` - list commands disabled in this server\n\
          - `/settings reply_cleanup` - delete a bot reply if a mod removes the original message\n\
+         - `/settings report_channel` - set the channel where embed failures are reported\n\
          - `/settings block_domain` - block a domain in this server\n\
          - `/settings unblock_domain` - unblock a domain in this server\n\
          - `/settings blocked_domains` - list blocked domains in this server",
@@ -259,6 +261,35 @@ async fn unblock_domain(
         ))
         .await?;
     }
+    Ok(())
+}
+
+/// Set or clear the channel where embed failures are reported
+#[poise::command(slash_command, guild_only, required_permissions = "ADMINISTRATOR")]
+async fn report_channel(
+    ctx: Context<'_>,
+    #[description = "Channel to report failures to (omit to disable)"] channel: Option<
+        serenity::GuildChannel,
+    >,
+) -> Result<(), Error> {
+    let guild_id = ctx
+        .guild_id()
+        .ok_or("This command can only be used in a server.")?;
+
+    let channel_id = channel.as_ref().map(|c| c.id.to_string());
+    db::set_report_channel(
+        &ctx.data().pool,
+        &guild_id.to_string(),
+        channel_id.as_deref(),
+    )
+    .await?;
+
+    let reply = match &channel {
+        Some(c) => format!("Embed failure reports will be sent to <#{}>.", c.id),
+        None => "Embed failure reporting has been disabled in this server.".to_string(),
+    };
+    ctx.say(reply).await?;
+
     Ok(())
 }
 

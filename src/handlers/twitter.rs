@@ -1,6 +1,6 @@
 use super::shared::{self, SettingCheck};
 use super::twitter_handler::{self, TwitterPost};
-use crate::constants::{TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
+use crate::constants::{FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -149,7 +149,14 @@ pub async fn handle_twitter_links(
             }
             Err(e) => {
                 warn!("Failed to fetch tweet {}: {}", url, e);
-                shared::record_embed(ctx, "twitter", false).await;
+                shared::report_failure(
+                    ctx,
+                    msg.guild_id,
+                    "twitter",
+                    FAILURE_FETCH,
+                    Some(&url),
+                    &e.to_string(),
+                );
                 any_failed = true;
             }
         }

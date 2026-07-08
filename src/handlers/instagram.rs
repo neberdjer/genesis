@@ -1,7 +1,8 @@
 use super::instagram_handler::InstagramPost;
 use super::shared::{self, SettingCheck};
 use crate::constants::{
-    INSTAGRAM_ACCENT_COLOR, INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS,
+    FAILURE_FETCH, INSTAGRAM_ACCENT_COLOR, INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA,
+    INSTAGRAM_MIRRORS,
 };
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
@@ -158,7 +159,14 @@ pub async fn handle_instagram_links(
             }
             Err(e) => {
                 warn!("Failed to fetch Instagram {}: {}", url, e);
-                shared::record_embed(ctx, "instagram", false).await;
+                shared::report_failure(
+                    ctx,
+                    msg.guild_id,
+                    "instagram",
+                    FAILURE_FETCH,
+                    Some(&url),
+                    &e.to_string(),
+                );
                 any_failed = true;
             }
         }

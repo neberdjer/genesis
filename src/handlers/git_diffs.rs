@@ -1,7 +1,9 @@
 use super::git_diff_handler::CommitDiff;
 use super::pagination;
 use super::shared::{self, SettingCheck};
-use crate::constants::{DIFF_CACHE_MAX_ENTRIES, FILES_PER_PAGE, PAGE_CACHE_TTL_SECONDS};
+use crate::constants::{
+    DIFF_CACHE_MAX_ENTRIES, FAILURE_FETCH, FILES_PER_PAGE, PAGE_CACHE_TTL_SECONDS,
+};
 use crate::db;
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
@@ -303,7 +305,14 @@ async fn handle_commit_diffs_impl(
             Ok(chunked) => chunked,
             Err(e) => {
                 warn!("Failed to fetch commit diff: {}", e);
-                shared::record_embed(ctx, "git_diffs", false).await;
+                shared::report_failure(
+                    ctx,
+                    msg.guild_id,
+                    "git_diffs",
+                    FAILURE_FETCH,
+                    None,
+                    &format!("{}/{}@{}: {}", commit.owner, commit.repo, commit.commit, e),
+                );
                 any_failed = true;
                 continue;
             }

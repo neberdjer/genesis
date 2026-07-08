@@ -1,5 +1,7 @@
 use super::deny;
-use crate::constants::{DISCORD_MESSAGE_LIMIT, TRUNCATED_MESSAGE_LIMIT};
+use crate::constants::{
+    DISCORD_MESSAGE_LIMIT, FAILURE_FETCH, FAILURE_TOO_LONG, TRUNCATED_MESSAGE_LIMIT,
+};
 use crate::handlers::file_pages;
 use crate::handlers::git_diff_handler::CommitDiff;
 use crate::handlers::git_diffs;
@@ -71,7 +73,14 @@ async fn send_file(ctx: Context<'_>, link: GitFileLink, only_me: bool) -> Result
         }
         Err(e) => {
             tracing::warn!("Failed to fetch git file via slash command: {}", e);
-            db::record_embed(&ctx.data().pool, "git_links", false).await;
+            shared::report_failure(
+                ctx.serenity_context(),
+                ctx.guild_id(),
+                "git_links",
+                FAILURE_FETCH,
+                Some(&link.original_url),
+                &e.to_string(),
+            );
             return deny(ctx, "Failed to fetch that file.").await;
         }
     };
@@ -106,7 +115,14 @@ async fn send_pages(
 ) -> Result<(), Error> {
     let footer = format!("\n-# Sent by <@{}>", ctx.author().id);
     if first_page.len() + footer.len() > DISCORD_MESSAGE_LIMIT {
-        db::record_embed(&ctx.data().pool, service, false).await;
+        shared::report_failure(
+            ctx.serenity_context(),
+            ctx.guild_id(),
+            service,
+            FAILURE_TOO_LONG,
+            None,
+            "first page exceeds the message limit",
+        );
         return deny(ctx, "Response too long to display.").await;
     }
 
@@ -132,7 +148,14 @@ async fn send_paged_file(
     only_me: bool,
 ) -> Result<(), Error> {
     if pages.is_empty() {
-        db::record_embed(&ctx.data().pool, "git_links", false).await;
+        shared::report_failure(
+            ctx.serenity_context(),
+            ctx.guild_id(),
+            "git_links",
+            FAILURE_FETCH,
+            Some(&link.original_url),
+            "no file content was returned",
+        );
         return deny(ctx, "No file content was returned.").await;
     }
 
@@ -162,12 +185,29 @@ async fn send_diff(ctx: Context<'_>, commit: CommitDiff, only_me: bool) -> Resul
     let chunked = match git_diffs::fetch_or_cached(&commit).await {
         Ok(c) if !c.is_empty() => c,
         Ok(_) => {
-            db::record_embed(&ctx.data().pool, "git_diffs", false).await;
+            shared::report_failure(
+                ctx.serenity_context(),
+                ctx.guild_id(),
+                "git_diffs",
+                FAILURE_FETCH,
+                None,
+                &format!(
+                    "{}/{}@{}: no diff content was returned",
+                    commit.owner, commit.repo, commit.commit
+                ),
+            );
             return deny(ctx, "No diff content was returned.").await;
         }
         Err(e) => {
             tracing::warn!("Failed to fetch commit diff via slash command: {}", e);
-            db::record_embed(&ctx.data().pool, "git_diffs", false).await;
+            shared::report_failure(
+                ctx.serenity_context(),
+                ctx.guild_id(),
+                "git_diffs",
+                FAILURE_FETCH,
+                None,
+                &format!("{}/{}@{}: {}", commit.owner, commit.repo, commit.commit, e),
+            );
             return deny(ctx, "Failed to fetch that commit diff.").await;
         }
     };

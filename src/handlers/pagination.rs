@@ -1,5 +1,5 @@
 use super::shared;
-use crate::constants::{DISCORD_MESSAGE_LIMIT, PAGE_CACHE_TTL_SECONDS};
+use crate::constants::{DISCORD_MESSAGE_LIMIT, FAILURE_TOO_LONG, PAGE_CACHE_TTL_SECONDS};
 use poise::serenity_prelude as serenity;
 use std::time::Instant;
 use tracing::{error, warn};
@@ -52,7 +52,14 @@ pub async fn send_first_page(
     let footer = format!("\n-# Sent by <@{}>", msg.author.id);
     if first_page.len() + footer.len() > DISCORD_MESSAGE_LIMIT {
         warn!("Paged response too long, skipping");
-        shared::record_embed(ctx, service, false).await;
+        shared::report_failure(
+            ctx,
+            msg.guild_id,
+            service,
+            FAILURE_TOO_LONG,
+            None,
+            "first page exceeds the message limit",
+        );
         return false;
     }
 

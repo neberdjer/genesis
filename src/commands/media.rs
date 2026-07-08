@@ -35,7 +35,14 @@ pub async fn instagram(
         Ok(post) => post,
         Err(e) => {
             tracing::warn!("Failed to fetch Instagram post via slash command: {}", e);
-            crate::db::record_embed(&ctx.data().pool, "instagram", false).await;
+            shared::report_failure(
+                ctx.serenity_context(),
+                ctx.guild_id(),
+                "instagram",
+                crate::constants::FAILURE_FETCH,
+                Some(&url),
+                &e.to_string(),
+            );
             ctx.send(
                 CreateReply::default()
                     .content("Failed to fetch the Instagram post.")
@@ -86,7 +93,14 @@ pub async fn twitter(
         Ok(post) => post,
         Err(e) => {
             tracing::warn!("Failed to fetch tweet via slash command: {}", e);
-            crate::db::record_embed(&ctx.data().pool, "twitter", false).await;
+            shared::report_failure(
+                ctx.serenity_context(),
+                ctx.guild_id(),
+                "twitter",
+                crate::constants::FAILURE_FETCH,
+                Some(&url),
+                &e.to_string(),
+            );
             ctx.send(
                 CreateReply::default()
                     .content("Failed to fetch the tweet.")
@@ -137,7 +151,14 @@ pub async fn tiktok(
         Ok(post) => post,
         Err(e) => {
             tracing::warn!("Failed to fetch TikTok via slash command: {}", e);
-            crate::db::record_embed(&ctx.data().pool, "tiktok", false).await;
+            shared::report_failure(
+                ctx.serenity_context(),
+                ctx.guild_id(),
+                "tiktok",
+                crate::constants::FAILURE_FETCH,
+                Some(&url),
+                &e.to_string(),
+            );
             ctx.send(
                 CreateReply::default()
                     .content("Failed to fetch the TikTok post.")
