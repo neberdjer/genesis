@@ -43,12 +43,18 @@ impl serenity::EventHandler for Handler {
                 }
                 tokio::join!(
                     handle_bot_mention(ctx, new_message, Some(&data.pool), &data.prefix),
-                    handle_commit_diffs(ctx, new_message, Some(&data.pool)),
-                    handle_git_links(ctx, new_message, Some(&data.pool)),
-                    handle_twitter_links(ctx, new_message, Some(&data.pool)),
-                    handle_tiktok_links(ctx, new_message, Some(&data.pool)),
-                    handle_instagram_links(ctx, new_message, Some(&data.pool)),
+                    run_link_handlers(ctx, new_message, Some(&data.pool)),
                 );
+            }
+            serenity::FullEvent::MessageUpdate { event, .. } => {
+                let new_message = &event.message;
+                if new_message.author.bot()
+                    || new_message.edited_timestamp.is_none()
+                    || handlers::shared::was_message_handled(new_message.id)
+                {
+                    return;
+                }
+                run_link_handlers(ctx, new_message, Some(&data.pool)).await;
             }
             serenity::FullEvent::InteractionCreate {
                 interaction: serenity::Interaction::Component(component),
@@ -56,6 +62,7 @@ impl serenity::EventHandler for Handler {
             } => {
                 handle_diff_pagination(ctx, component).await;
                 handlers::handle_file_pagination(ctx, component).await;
+                handlers::reminders::handle_reminder_buttons(ctx, component).await;
             }
             serenity::FullEvent::GuildMemberAddition { new_member, .. } => {
                 handle_member_join(ctx, new_member, Some(&data.pool)).await;
@@ -73,11 +80,33 @@ impl serenity::EventHandler for Handler {
                     tokio::spawn(status_poller(ctx.clone()));
                     tokio::spawn(custom_hosts_poller(ctx.clone()));
                     tokio::spawn(handlers::reminders::reminder_poller(ctx.clone()));
+                    tokio::spawn(register_commands_on_update(ctx.clone()));
                 }
             }
             _ => {}
         }
     }
+}
+
+async fn run_link_handlers(
+    ctx: &serenity::Context,
+    msg: &serenity::Message,
+    pool: Option<&PgPool>,
+) {
+    tokio::join!(
+        handle_commit_diffs(ctx, msg, pool),
+        handle_git_links(ctx, msg, pool),
+        handle_twitter_links(ctx, msg, pool),
+        handle_tiktok_links(ctx, msg, pool),
+        handle_instagram_links(ctx, msg, pool),
+    );
+}
+
+fn full_command_list() -> Vec<poise::Command<Data, Error>> {
+    let mut commands = commands::all_commands();
+    commands.push(help());
+    commands.push(register_commands());
+    commands
 }
 
 async fn custom_hosts_poller(ctx: serenity::Context) {
@@ -109,6 +138,30 @@ async fn status_poller(ctx: serenity::Context) {
             Ok(None) => {}
             Err(e) => warn!("Failed to poll bot status: {}", e),
         }
+    }
+}
+
+async fn register_commands_on_update(ctx: serenity::Context) {
+    let data = ctx.data::<Data>();
+    let version = env!("CARGO_PKG_VERSION");
+
+    match db::get_meta(&data.pool, "registered_version").await {
+        Ok(Some(registered)) if registered == version => return,
+        Ok(_) => {}
+        Err(e) => {
+            warn!("Failed to check registered command version: {}", e);
+            return;
+        }
+    }
+
+    match poise::builtins::register_globally(&ctx.http, &full_command_list()).await {
+        Ok(()) => {
+            info!("Registered slash commands for version {}", version);
+            if let Err(e) = db::set_meta(&data.pool, "registered_version", version).await {
+                warn!("Failed to store registered command version: {}", e);
+            }
+        }
+        Err(e) => error!("Failed to register slash commands: {}", e),
     }
 }
 
@@ -384,12 +437,8 @@ async fn main() -> Result<(), Error> {
         prefix: prefix.clone(),
     };
 
-    let mut all_commands = commands::all_commands();
-    all_commands.push(help());
-    all_commands.push(register_commands());
-
     let options = poise::FrameworkOptions {
-        commands: all_commands,
+        commands: full_command_list(),
         prefix_options: poise::PrefixFrameworkOptions {
             prefix: Some(prefix.into()),
             ..Default::default()

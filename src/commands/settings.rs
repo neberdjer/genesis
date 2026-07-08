@@ -1,16 +1,7 @@
-use crate::constants::TOGGLEABLE_COMMANDS;
+use crate::constants::{TOGGLEABLE_COMMANDS, TOGGLEABLE_SERVICES};
 use crate::handlers::shared::normalize_domain;
 use crate::{Context, Error, db};
 use poise::serenity_prelude as serenity;
-
-const SERVICES: &[&str] = &[
-    "git_diffs",
-    "git_compares",
-    "git_links",
-    "twitter",
-    "tiktok",
-    "instagram",
-];
 
 /// Configure server-wide bot settings (admin only)
 #[poise::command(
@@ -161,13 +152,13 @@ async fn toggle(
         .ok_or("This command can only be used in a server.")?;
 
     let service = service.to_ascii_lowercase();
-    if !SERVICES.contains(&service.as_str()) {
+    if !TOGGLEABLE_SERVICES.contains(&service.as_str()) {
         ctx.send(
             poise::CreateReply::default()
                 .content(format!(
                     "Unknown service `{}`. Valid options: {}.",
                     service,
-                    SERVICES
+                    TOGGLEABLE_SERVICES
                         .iter()
                         .map(|s| format!("`{}`", s))
                         .collect::<Vec<_>>()
@@ -301,7 +292,7 @@ async fn autocomplete_service<'a>(
     partial: &'a str,
 ) -> serenity::CreateAutocompleteResponse<'a> {
     let partial_lower = partial.to_ascii_lowercase();
-    let choices: Vec<_> = SERVICES
+    let choices: Vec<_> = TOGGLEABLE_SERVICES
         .iter()
         .filter(|name| name.starts_with(&partial_lower))
         .map(|name| serenity::AutocompleteChoice::from(*name))

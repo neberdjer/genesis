@@ -1,7 +1,7 @@
 use super::git_diff_handler::CommitDiff;
 use super::pagination;
 use super::shared::{self, SettingCheck};
-use crate::constants::{DIFF_CACHE_MAX_ENTRIES, FILES_PER_PAGE};
+use crate::constants::{DIFF_CACHE_MAX_ENTRIES, FILES_PER_PAGE, PAGE_CACHE_TTL_SECONDS};
 use crate::db;
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
@@ -66,7 +66,12 @@ fn get_cached_responses(commit: &CommitDiff) -> Option<Vec<String>> {
 fn cache_responses(commit: &CommitDiff, responses: Vec<String>) {
     let cache = DIFF_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(mut cache) = cache.lock() {
-        pagination::evict_for_insert(&mut cache, DIFF_CACHE_MAX_ENTRIES, |v| v.timestamp);
+        shared::evict_for_insert(
+            &mut cache,
+            DIFF_CACHE_MAX_ENTRIES,
+            PAGE_CACHE_TTL_SECONDS,
+            |v| v.timestamp,
+        );
         let key = get_cache_key(commit);
         cache.insert(key, CachedDiff::new(responses));
     }

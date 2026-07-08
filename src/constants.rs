@@ -78,15 +78,34 @@ pub const TWITTER_HOSTS: &[&str] = &[
 
 pub const RATE_LIMIT_SECONDS: u64 = 10;
 pub const MAX_RATE_LIMIT_ENTRIES: usize = 10_000;
+pub const HANDLED_MESSAGE_TTL_SECONDS: u64 = 3600;
+pub const MAX_HANDLED_MESSAGE_ENTRIES: usize = 10_000;
 pub const WELCOME_RATE_LIMIT_SECONDS: u64 = 2;
 pub const DIFF_CACHE_MAX_ENTRIES: usize = 1000;
 pub const FILE_CACHE_MAX_ENTRIES: usize = 50;
+pub const PAGE_CACHE_TTL_SECONDS: u64 = 600;
+pub const REPLY_WATCH_PRUNE_THRESHOLD: usize = 256;
+
+pub const TOGGLEABLE_SERVICES: &[&str] = &[
+    "git_diffs",
+    "git_compares",
+    "git_links",
+    "twitter",
+    "tiktok",
+    "instagram",
+];
 
 pub const REMINDER_POLL_SECONDS: u64 = 15;
 pub const REMINDER_MIN_SECONDS: u64 = 10;
 pub const REMINDER_MAX_SECONDS: u64 = 365 * 86400;
 pub const MAX_REMINDERS_PER_USER: i64 = 25;
 pub const MAX_REMINDER_CHARS: usize = 1000;
+pub const REMINDER_PREFIX: &str = "Reminder: ";
+pub const SNOOZE_CHOICES: &[(u64, &str)] = &[
+    (600, "Snooze 10m"),
+    (3600, "Snooze 1h"),
+    (86400, "Snooze 1d"),
+];
 
 pub const COMMAND_SCOPE_GLOBAL: &str = "global";
 

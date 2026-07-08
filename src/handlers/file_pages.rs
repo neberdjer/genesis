@@ -1,7 +1,7 @@
 use super::git_handler::{FileResponse, GitFileLink};
 use super::pagination;
 use super::shared;
-use crate::constants::FILE_CACHE_MAX_ENTRIES;
+use crate::constants::{FILE_CACHE_MAX_ENTRIES, PAGE_CACHE_TTL_SECONDS};
 use poise::serenity_prelude as serenity;
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -34,7 +34,12 @@ pub fn cache_pages(link: &GitFileLink, pages: Vec<String>) -> String {
                 entry.pages = Vec::new();
             }
         }
-        pagination::evict_for_insert(&mut cache, FILE_CACHE_MAX_ENTRIES, |e| e.timestamp);
+        shared::evict_for_insert(
+            &mut cache,
+            FILE_CACHE_MAX_ENTRIES,
+            PAGE_CACHE_TTL_SECONDS,
+            |e| e.timestamp,
+        );
         cache.insert(
             key.clone(),
             CachedFile {

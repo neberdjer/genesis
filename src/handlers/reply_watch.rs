@@ -1,5 +1,5 @@
 use crate::Data;
-use crate::constants::REPLY_WATCH_SECONDS;
+use crate::constants::{REPLY_WATCH_PRUNE_THRESHOLD, REPLY_WATCH_SECONDS};
 use poise::serenity_prelude as serenity;
 use serenity::model::guild::audit_log::{Action, MessageAction};
 use std::collections::HashMap;
@@ -16,8 +16,6 @@ struct Watch {
 
 static WATCHES: OnceLock<Mutex<HashMap<serenity::MessageId, Watch>>> = OnceLock::new();
 
-const PRUNE_THRESHOLD: usize = 256;
-
 fn map() -> &'static Mutex<HashMap<serenity::MessageId, Watch>> {
     WATCHES.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -30,7 +28,7 @@ pub fn watch(
 ) {
     if let Ok(mut m) = map().lock() {
         let now = Instant::now();
-        if m.len() >= PRUNE_THRESHOLD {
+        if m.len() >= REPLY_WATCH_PRUNE_THRESHOLD {
             m.retain(|_, w| w.expires > now);
         }
         m.insert(

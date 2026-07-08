@@ -1,6 +1,7 @@
 use crate::constants::{
     EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, FAILED_EMBED_REACTION,
-    MAX_RATE_LIMIT_ENTRIES, RATE_LIMIT_SECONDS,
+    HANDLED_MESSAGE_TTL_SECONDS, MAX_HANDLED_MESSAGE_ENTRIES, MAX_RATE_LIMIT_ENTRIES,
+    RATE_LIMIT_SECONDS,
 };
 use crate::db;
 use poise::serenity_prelude as serenity;
@@ -10,6 +11,26 @@ use std::io::Read as _;
 use std::sync::{Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
+
+pub fn evict_for_insert<K: Clone + Eq + std::hash::Hash, V>(
+    map: &mut HashMap<K, V>,
+    max_entries: usize,
+    ttl_seconds: u64,
+    timestamp: impl Fn(&V) -> Instant,
+) {
+    if map.len() < max_entries {
+        return;
+    }
+    map.retain(|_, v| timestamp(v).elapsed().as_secs() <= ttl_seconds);
+    if map.len() >= max_entries
+        && let Some(oldest_key) = map
+            .iter()
+            .min_by_key(|(_, v)| timestamp(v))
+            .map(|(k, _)| k.clone())
+    {
+        map.remove(&oldest_key);
+    }
+}
 
 static RATE_LIMITS: OnceLock<Mutex<HashMap<(serenity::UserId, &'static str), Instant>>> =
     OnceLock::new();
@@ -28,10 +49,7 @@ pub fn check_rate_limit(user_id: serenity::UserId, handler: &'static str) -> boo
         return false;
     }
 
-    if map.len() >= MAX_RATE_LIMIT_ENTRIES {
-        map.retain(|_, instant| instant.elapsed().as_secs() < RATE_LIMIT_SECONDS);
-    }
-
+    evict_for_insert(&mut map, MAX_RATE_LIMIT_ENTRIES, RATE_LIMIT_SECONDS, |t| *t);
     map.insert(key, Instant::now());
     true
 }
@@ -127,6 +145,31 @@ pub async fn react_failure(ctx: &serenity::Context, msg: &serenity::Message) {
     }
 }
 
+static HANDLED_MESSAGES: OnceLock<Mutex<HashMap<serenity::MessageId, Instant>>> = OnceLock::new();
+
+fn handled_messages() -> &'static Mutex<HashMap<serenity::MessageId, Instant>> {
+    HANDLED_MESSAGES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn mark_message_handled(id: serenity::MessageId) {
+    if let Ok(mut map) = handled_messages().lock() {
+        evict_for_insert(
+            &mut map,
+            MAX_HANDLED_MESSAGE_ENTRIES,
+            HANDLED_MESSAGE_TTL_SECONDS,
+            |t| *t,
+        );
+        map.insert(id, Instant::now());
+    }
+}
+
+pub fn was_message_handled(id: serenity::MessageId) -> bool {
+    handled_messages().lock().is_ok_and(|map| {
+        map.get(&id)
+            .is_some_and(|t| t.elapsed().as_secs() < HANDLED_MESSAGE_TTL_SECONDS)
+    })
+}
+
 pub async fn send_reply(
     ctx: &serenity::Context,
     msg: &serenity::Message,
@@ -136,6 +179,7 @@ pub async fn send_reply(
     match msg.channel_id.send_message(&ctx.http, reply).await {
         Ok(sent) => {
             super::reply_watch::watch(msg.id, sent.id, msg.channel_id, msg.author.id);
+            mark_message_handled(msg.id);
             record_embed(ctx, service, true).await;
             true
         }

@@ -1,33 +1,11 @@
 use super::shared;
-use crate::constants::DISCORD_MESSAGE_LIMIT;
+use crate::constants::{DISCORD_MESSAGE_LIMIT, PAGE_CACHE_TTL_SECONDS};
 use poise::serenity_prelude as serenity;
-use std::collections::HashMap;
 use std::time::Instant;
 use tracing::{error, warn};
 
-pub const PAGE_CACHE_TTL_SECONDS: u64 = 600;
-
 pub fn is_cache_expired(timestamp: Instant) -> bool {
     timestamp.elapsed().as_secs() > PAGE_CACHE_TTL_SECONDS
-}
-
-pub fn evict_for_insert<V>(
-    map: &mut HashMap<String, V>,
-    max_entries: usize,
-    timestamp: impl Fn(&V) -> Instant,
-) {
-    if map.len() < max_entries {
-        return;
-    }
-    map.retain(|_, v| !is_cache_expired(timestamp(v)));
-    if map.len() >= max_entries
-        && let Some(oldest_key) = map
-            .iter()
-            .min_by_key(|(_, v)| timestamp(v))
-            .map(|(k, _)| k.clone())
-    {
-        map.remove(&oldest_key);
-    }
 }
 
 pub fn split_lock_suffix(rest: &str) -> (&str, Option<u64>) {

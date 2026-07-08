@@ -700,3 +700,25 @@ pub async fn delete_reminders(pool: &PgPool, ids: &[i32]) -> Result<(), sqlx::Er
         .await?;
     Ok(())
 }
+
+pub async fn get_meta(pool: &PgPool, key: &str) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar::<_, String>("SELECT value FROM bot_meta WHERE key = $1")
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn set_meta(pool: &PgPool, key: &str, value: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO bot_meta (key, value)
+        VALUES ($1, $2)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        "#,
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
