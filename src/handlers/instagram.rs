@@ -33,17 +33,6 @@ fn clean_url(url: &str) -> &str {
     trimmed.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
 }
 
-fn media_filename(index: usize, url: &str) -> String {
-    let ext = if url.contains(".mp4") || url.contains("video") {
-        "mp4"
-    } else if url.contains(".webp") {
-        "webp"
-    } else {
-        "jpg"
-    };
-    format!("instagram_{}.{}", index, ext)
-}
-
 pub async fn build_container(
     post: &InstagramPost,
     user_id: serenity::UserId,
@@ -74,7 +63,7 @@ pub async fn build_container(
     let mut attachments = Vec::new();
     let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
     for (i, media_url) in post.media.iter().take(10).enumerate() {
-        let filename = media_filename(i, media_url);
+        let filename = shared::media_filename("instagram", i, media_url, None);
         if let Some(data) = shared::download_media(media_url, ua_for_media_url(media_url)).await {
             let attachment_url = format!("attachment://{}", filename);
             attachments.push(serenity::CreateAttachment::bytes(data, filename));

@@ -14,22 +14,6 @@ fn clean_url(url: &str) -> &str {
     trimmed.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
 }
 
-fn media_filename(index: usize, url: &str) -> String {
-    let lower = url.to_ascii_lowercase();
-    let ext = if lower.contains(".jpeg") || lower.contains(".jpg") {
-        "jpg"
-    } else if lower.contains(".webp") {
-        "webp"
-    } else if lower.contains(".png") {
-        "png"
-    } else if lower.contains(".mp4") || lower.contains("/play/") || lower.contains("playwm") {
-        "mp4"
-    } else {
-        "jpg"
-    };
-    format!("tiktok_{}.{}", index, ext)
-}
-
 pub async fn build_container(
     post: &TikTokPost,
     user_id: serenity::UserId,
@@ -50,7 +34,7 @@ pub async fn build_container(
     let mut attachments = Vec::new();
     let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
     for (i, media_url) in post.media.iter().take(10).enumerate() {
-        let filename = media_filename(i, media_url);
+        let filename = shared::media_filename("tiktok", i, media_url, None);
         if let Some(data) = shared::download_media(media_url, TIKTOK_DOWNLOAD_UA).await {
             let attachment_url = format!("attachment://{}", filename);
             attachments.push(serenity::CreateAttachment::bytes(data, filename));

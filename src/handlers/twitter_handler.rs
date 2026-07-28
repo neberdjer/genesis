@@ -11,11 +11,16 @@ pub(crate) fn matches_twitter_host(url: &str) -> bool {
     super::shared::matches_host(url, TWITTER_HOSTS, "twitter")
 }
 
+pub struct TwitterMedia {
+    pub url: String,
+    pub is_gif: bool,
+}
+
 pub struct TwitterPost {
     pub author: String,
     pub username: String,
     pub text: String,
-    pub media: Vec<String>,
+    pub media: Vec<TwitterMedia>,
     pub replying_to: Option<String>,
     pub quote_author: Option<String>,
     pub quote_username: Option<String>,
@@ -163,30 +168,70 @@ impl TwitterPost {
             .to_string()
     }
 
-    fn extract_media(item: &Value) -> Vec<String> {
+    fn extract_media(item: &Value) -> Vec<TwitterMedia> {
         let mut media = Vec::new();
-        let Some(details) = item.get("mediaDetails").and_then(|m| m.as_array()) else {
-            return media;
-        };
-
-        for d in details {
-            let kind = d.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            match kind {
-                "video" | "animated_gif" => {
-                    if let Some(url) = Self::pick_best_video_variant(d) {
-                        media.push(url);
-                    } else if let Some(url) = d.get("media_url_https").and_then(|u| u.as_str()) {
-                        media.push(url.to_string());
+        if let Some(details) = item.get("mediaDetails").and_then(|m| m.as_array()) {
+            for d in details {
+                let kind = d.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                match kind {
+                    "video" | "animated_gif" => {
+                        let url = Self::pick_best_video_variant(d).or_else(|| {
+                            d.get("media_url_https")
+                                .and_then(|u| u.as_str())
+                                .map(str::to_string)
+                        });
+                        if let Some(url) = url {
+                            media.push(TwitterMedia {
+                                url,
+                                is_gif: kind == "animated_gif",
+                            });
+                        }
                     }
-                }
-                _ => {
-                    if let Some(url) = d.get("media_url_https").and_then(|u| u.as_str()) {
-                        media.push(format!("{}?name=orig", url));
+                    _ => {
+                        if let Some(url) = d.get("media_url_https").and_then(|u| u.as_str()) {
+                            media.push(TwitterMedia {
+                                url: format!("{}?name=orig", url),
+                                is_gif: false,
+                            });
+                        }
                     }
                 }
             }
         }
+
+        if media.is_empty()
+            && let Some(url) = Self::extract_card_image(item)
+        {
+            media.push(TwitterMedia { url, is_gif: false });
+        }
         media
+    }
+
+    fn extract_card_image(item: &Value) -> Option<String> {
+        let bindings = item
+            .get("card")
+            .and_then(|c| c.get("binding_values"))
+            .and_then(|b| b.as_object())?;
+
+        const KEYS: &[&str] = &[
+            "photo_image_full_size_original",
+            "summary_photo_image_original",
+            "photo_image_full_size_large",
+            "summary_photo_image_large",
+            "thumbnail_image_original",
+            "thumbnail_image_large",
+        ];
+        for key in KEYS {
+            if let Some(url) = bindings
+                .get(*key)
+                .and_then(|v| v.get("image_value"))
+                .and_then(|iv| iv.get("url"))
+                .and_then(|u| u.as_str())
+            {
+                return Some(url.to_string());
+            }
+        }
+        None
     }
 
     fn pick_best_video_variant(media_detail: &Value) -> Option<String> {

@@ -307,6 +307,28 @@ pub async fn send_reply(
     }
 }
 
+pub fn media_filename(prefix: &str, index: usize, url: &str, ext_override: Option<&str>) -> String {
+    let lower = url.to_ascii_lowercase();
+    let ext = ext_override.unwrap_or_else(|| {
+        if lower.contains(".jpeg") || lower.contains(".jpg") {
+            "jpg"
+        } else if lower.contains(".webp") {
+            "webp"
+        } else if lower.contains(".png") {
+            "png"
+        } else if lower.contains(".mp4")
+            || lower.contains("video")
+            || lower.contains("/play/")
+            || lower.contains("playwm")
+        {
+            "mp4"
+        } else {
+            "jpg"
+        }
+    });
+    format!("{}_{}.{}", prefix, index, ext)
+}
+
 pub async fn download_media(url: &str, user_agent: &str) -> Option<Vec<u8>> {
     let url = url.to_string();
     let user_agent = user_agent.to_string();
@@ -315,6 +337,41 @@ pub async fn download_media(url: &str, user_agent: &str) -> Option<Vec<u8>> {
         let mut bytes = Vec::new();
         response.into_reader().read_to_end(&mut bytes).ok()?;
         Some(bytes)
+    })
+    .await
+    .ok()?
+}
+
+pub async fn mp4_to_gif(data: Vec<u8>) -> Option<Vec<u8>> {
+    use crate::constants::{GIF_FPS, GIF_MAX_UPLOAD_BYTES, GIF_MAX_WIDTH};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut input = std::env::temp_dir();
+    input.push(format!("genesis_gif_{}_{}.mp4", std::process::id(), seq));
+
+    tokio::task::spawn_blocking(move || {
+        std::fs::write(&input, &data).ok()?;
+        let filter = format!(
+            "fps={},scale='min({},iw)':-2:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer",
+            GIF_FPS, GIF_MAX_WIDTH
+        );
+        let output = std::process::Command::new("ffmpeg")
+            .args(["-y", "-loglevel", "error", "-i"])
+            .arg(&input)
+            .args(["-vf", &filter, "-f", "gif", "-"])
+            .output();
+        let _ = std::fs::remove_file(&input);
+
+        let output = output.ok()?;
+        if !output.status.success() || output.stdout.is_empty() {
+            return None;
+        }
+        if output.stdout.len() > GIF_MAX_UPLOAD_BYTES {
+            return None;
+        }
+        Some(output.stdout)
     })
     .await
     .ok()?

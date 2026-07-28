@@ -18,6 +18,10 @@ pub const MAX_DIFF_FETCH_BYTES: usize = 10 * 1024 * 1024;
 pub const SPACES_PER_TAB: &str = "    ";
 pub const MAX_FILE_CHARS: usize = 1700;
 
+pub const GIF_MAX_UPLOAD_BYTES: usize = 9 * 1024 * 1024;
+pub const GIF_MAX_WIDTH: u32 = 480;
+pub const GIF_FPS: u32 = 15;
+
 pub const INSTAGRAM_DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 pub const INSTAGRAM_MOBILE_UA: &str = "Instagram 275.0.0.27.98 Android (33/13; 420dpi; 1080x2400; samsung; SM-G991B; o1s; exynos2100)";
 pub const INSTAGRAM_EMBED_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
