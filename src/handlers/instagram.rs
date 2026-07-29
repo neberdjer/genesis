@@ -28,11 +28,6 @@ fn is_instagram_url(word: &str) -> bool {
         || lower.contains("/share/")
 }
 
-fn clean_url(url: &str) -> &str {
-    let trimmed = url.trim_start_matches(|c: char| !c.is_alphanumeric());
-    trimmed.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
-}
-
 pub async fn build_container(
     post: &InstagramPost,
     user_id: serenity::UserId,
@@ -100,7 +95,7 @@ pub async fn handle_instagram_links(
         if !is_instagram_url(word) {
             continue;
         }
-        let cleaned = clean_url(word).to_string();
+        let cleaned = shared::clean_media_url(word).to_string();
         if seen.insert(cleaned.clone()) {
             found_urls.push(cleaned);
         }

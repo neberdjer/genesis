@@ -23,6 +23,7 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
         general::stats(),
         media::instagram(),
         media::twitter(),
+        media::bsky(),
         media::tiktok(),
         git::git(),
         remind::reminder(),

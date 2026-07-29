@@ -307,6 +307,11 @@ pub async fn send_reply(
     }
 }
 
+pub fn clean_media_url(url: &str) -> &str {
+    let trimmed = url.trim_start_matches(|c: char| !c.is_alphanumeric());
+    trimmed.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
+}
+
 pub fn media_filename(prefix: &str, index: usize, url: &str, ext_override: Option<&str>) -> String {
     let lower = url.to_ascii_lowercase();
     let ext = ext_override.unwrap_or_else(|| {
@@ -389,6 +394,7 @@ pub enum SettingCheck {
     TikTok,
     Instagram,
     Twitter,
+    Bsky,
     GitLinks,
     GitDiffs,
 }
@@ -534,6 +540,7 @@ pub async fn pre_check(
                     SettingCheck::TikTok => settings.tiktok_enabled,
                     SettingCheck::Instagram => settings.instagram_enabled,
                     SettingCheck::Twitter => settings.twitter_enabled,
+                    SettingCheck::Bsky => settings.bsky_enabled,
                     SettingCheck::GitLinks => settings.git_links_enabled,
                     SettingCheck::GitDiffs => settings.git_diffs_enabled,
                 };

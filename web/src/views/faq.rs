@@ -15,7 +15,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
             details.faq-item open[true] {
                 summary.faq-q { "what does genesis do?" }
                 div.faq-a {
-                    p { "discord's built-in previews for twitter / x, instagram, and tiktok are often broken: the video won't play, carousel images go missing, or the text is cut off." }
+                    p { "discord's built-in previews for twitter / x, instagram, tiktok, and bluesky are often broken: the video won't play, carousel images go missing, or the text is cut off." }
                     p { "genesis spots those links and replaces the preview with a clean embed that shows the video, every image, and the full post." }
                 }
             }

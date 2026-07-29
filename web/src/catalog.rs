@@ -29,6 +29,11 @@ pub const FEATURE_GROUPS: &[FeatureGroup] = &[
                 desc: "videos and photo slideshows",
             },
             Feature {
+                icon: "bsky",
+                title: "bluesky",
+                desc: "posts, images, video, quotes, and link cards",
+            },
+            Feature {
                 icon: "github",
                 title: "github and gitlab",
                 desc: "file snippets and commit diffs with pagination",
@@ -111,6 +116,18 @@ pub const DOMAIN_GROUPS: &[DomainGroup] = &[
         ],
     },
     DomainGroup {
+        key: "bsky",
+        label: "bluesky",
+        media: true,
+        domains: &[
+            "bsky.app",
+            "fxbsky.app",
+            "bskx.app",
+            "psky.app",
+            "cbsky.app",
+        ],
+    },
+    DomainGroup {
         key: "git",
         label: "github / gitlab",
         media: false,
@@ -148,6 +165,10 @@ pub const COMMAND_GROUPS: &[Group] = &[
             Command {
                 usage: "/twitter <url>",
                 desc: "post a tweet (text, photos, videos, quotes)",
+            },
+            Command {
+                usage: "/bsky <url>",
+                desc: "post a bluesky post (text, images, video, quotes)",
             },
             Command {
                 usage: "/tiktok <url>",

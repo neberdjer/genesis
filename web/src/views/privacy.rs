@@ -90,7 +90,7 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
             h2.faq-section { "third parties" }
             p {
                 "to build an embed, genesis fetches the post from the source platform or a mirror of it: "
-                "twitter / x, instagram, tiktok (through tikwm.com), and github / gitlab / "
+                "twitter / x, instagram, tiktok (through tikwm.com), bluesky (through its public atproto api), and github / gitlab / "
                 "self-hosted git hosts. the " code { "/timezone" } " command sends a discord user id to our "
                 "timezone service to look up their zone. each service's own privacy policy applies to the "
                 "data it receives."

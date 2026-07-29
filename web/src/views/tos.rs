@@ -28,6 +28,7 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
                     "re-uploads it to discord, then hides the preview on your original message. it does "
                     "not delete your message."
                 }
+                li { "bluesky: it posts the post's text, images, video, quotes, and link cards." }
                 li { "github, gitlab, and self-hosted git hosts: it posts file snippets and commit or compare diffs." }
                 li {
                     "utility commands such as " code { "/git" } ", " code { "/timezone" } ", "

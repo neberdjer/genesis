@@ -1,43 +1,42 @@
+use super::bsky_handler::{self, BskyPost};
 use super::shared::{self, SettingCheck};
-use super::twitter_handler::{self, TwitterPost};
-use crate::constants::{FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
+use crate::constants::{BSKY_ACCENT_COLOR, BSKY_DOWNLOAD_UA, FAILURE_FETCH};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
 
-fn is_twitter_url(word: &str) -> bool {
-    let lower = word.to_ascii_lowercase();
-    if lower.contains("t.co/") {
-        return true;
-    }
-    twitter_handler::matches_twitter_host(word) && lower.contains("/status/")
+fn is_bsky_url(word: &str) -> bool {
+    bsky_handler::matches_bsky_host(word) && word.contains("/post/")
 }
 
 pub async fn build_container(
-    post: &TwitterPost,
+    post: &BskyPost,
     user_id: serenity::UserId,
 ) -> (
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let mut content = format!("**{}** (@{})", post.author, post.username);
-
-    if let Some(replying_to) = &post.replying_to {
-        content.push_str(&format!("\nReplying to @{}", replying_to));
-    }
+    let mut content = if post.author == post.handle {
+        format!("**@{}**", post.handle)
+    } else {
+        format!("**{}** (@{})", post.author, post.handle)
+    };
 
     if !post.text.is_empty() {
         content.push_str(&format!("\n{}", post.text));
     }
 
-    if let Some(quote_author) = &post.quote_author
-        && let (Some(quote_username), Some(quote_text)) = (&post.quote_username, &post.quote_text)
-    {
-        let quoted_lines = quote_text.replace('\n', "\n> ");
-        content.push_str(&format!(
-            "\n\n> **{}** (@{})\n> {}",
-            quote_author, quote_username, quoted_lines
-        ));
+    if let Some((title, uri)) = &post.external {
+        content.push_str(&format!("\n\n[{}]({})", title, uri));
+    }
+
+    if let Some(quote_author) = &post.quote_author {
+        let quoted = post
+            .quote_text
+            .as_deref()
+            .unwrap_or("")
+            .replace('\n', "\n> ");
+        content.push_str(&format!("\n\n> **{}**\n> {}", quote_author, quoted));
     }
 
     let mut components: Vec<serenity::CreateContainerComponent<'static>> =
@@ -48,21 +47,12 @@ pub async fn build_container(
     let mut attachments = Vec::new();
     let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
     for (i, item) in post.media.iter().take(10).enumerate() {
-        let Some(data) = shared::download_media(&item.url, TWITTER_DOWNLOAD_UA).await else {
+        let Some(data) = shared::download_media(&item.url, BSKY_DOWNLOAD_UA).await else {
             warn!("Failed to download media: {}", item.url);
             continue;
         };
-
-        let (data, ext) = if item.is_gif {
-            match shared::mp4_to_gif(data.clone()).await {
-                Some(gif) => (gif, Some("gif")),
-                None => (data, Some("mp4")),
-            }
-        } else {
-            (data, None)
-        };
-
-        let filename = shared::media_filename("twitter", i, &item.url, ext);
+        let ext = item.is_video.then_some("mp4");
+        let filename = shared::media_filename("bsky", i, &item.url, ext);
         let attachment_url = format!("attachment://{}", filename);
         attachments.push(serenity::CreateAttachment::bytes(data, filename));
         gallery_items.push(serenity::CreateMediaGalleryItem::new(
@@ -80,11 +70,11 @@ pub async fn build_container(
         serenity::CreateTextDisplay::new(format!("-# Sent by <@{}>", user_id)),
     ));
 
-    let container = serenity::CreateContainer::new(components).accent_color(TWITTER_ACCENT_COLOR);
+    let container = serenity::CreateContainer::new(components).accent_color(BSKY_ACCENT_COLOR);
     (attachments, container)
 }
 
-pub async fn handle_twitter_links(
+pub async fn handle_bsky_links(
     ctx: &serenity::Context,
     msg: &serenity::Message,
     pool: Option<&PgPool>,
@@ -92,7 +82,7 @@ pub async fn handle_twitter_links(
     let mut found_urls: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for word in msg.content.split_whitespace() {
-        if !is_twitter_url(word) {
+        if !is_bsky_url(word) {
             continue;
         }
         let cleaned = shared::clean_media_url(word).to_string();
@@ -111,11 +101,11 @@ pub async fn handle_twitter_links(
         return;
     }
 
-    if !shared::pre_check(msg, pool, SettingCheck::Twitter).await {
+    if !shared::pre_check(msg, pool, SettingCheck::Bsky).await {
         return;
     }
 
-    if !shared::check_rate_limit(msg.author.id, "twitter") {
+    if !shared::check_rate_limit(msg.author.id, "bsky") {
         debug!("Rate limited, skipping");
         return;
     }
@@ -123,9 +113,9 @@ pub async fn handle_twitter_links(
     let mut any_sent = false;
     let mut any_failed = false;
     for url in found_urls {
-        debug!("Fetching tweet: url={}", url);
+        debug!("Fetching Bluesky post: url={}", url);
         let url_owned = url.clone();
-        match shared::spawn_blocking_fetch(move || TwitterPost::fetch(&url_owned)).await {
+        match shared::spawn_blocking_fetch(move || BskyPost::fetch(&url_owned)).await {
             Ok(post) => {
                 let (attachments, container) = build_container(&post, msg.author.id).await;
                 let message = serenity::CreateMessage::new()
@@ -135,18 +125,18 @@ pub async fn handle_twitter_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                if shared::send_reply(ctx, msg, "twitter", message).await {
+                if shared::send_reply(ctx, msg, "bsky", message).await {
                     any_sent = true;
                 } else {
                     any_failed = true;
                 }
             }
             Err(e) => {
-                warn!("Failed to fetch tweet {}: {}", url, e);
+                warn!("Failed to fetch Bluesky post {}: {}", url, e);
                 shared::report_failure(
                     ctx,
                     msg.guild_id,
-                    "twitter",
+                    "bsky",
                     FAILURE_FETCH,
                     Some(&url),
                     &e.to_string(),

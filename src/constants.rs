@@ -67,6 +67,7 @@ pub const TIMEZONE_REGISTER_URL: &str = "https://timezone.creations.works/";
 pub const INSTAGRAM_ACCENT_COLOR: u32 = 0xE4405F;
 pub const TWITTER_ACCENT_COLOR: u32 = 0x1DA1F2;
 pub const TIKTOK_ACCENT_COLOR: u32 = 0x000000;
+pub const BSKY_ACCENT_COLOR: u32 = 0x1185FE;
 
 pub const TWITTER_HOSTS: &[&str] = &[
     "twitter.com",
@@ -78,6 +79,17 @@ pub const TWITTER_HOSTS: &[&str] = &[
     "fixvx.com",
     "twittpr.com",
     "twitterez.com",
+];
+
+pub const BSKY_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
+pub const BSKY_API_BASE: &str = "https://public.api.bsky.app";
+pub const BSKY_PLC_DIRECTORY: &str = "https://plc.directory";
+pub const BSKY_HOSTS: &[&str] = &[
+    "bsky.app",
+    "fxbsky.app",
+    "bskx.app",
+    "psky.app",
+    "cbsky.app",
 ];
 
 pub const RATE_LIMIT_SECONDS: u64 = 10;
@@ -105,6 +117,7 @@ pub const TOGGLEABLE_SERVICES: &[&str] = &[
     "twitter",
     "tiktok",
     "instagram",
+    "bsky",
 ];
 
 pub const REMINDER_POLL_SECONDS: u64 = 15;
@@ -125,6 +138,7 @@ pub const TOGGLEABLE_COMMANDS: &[&str] = &[
     "instagram",
     "twitter",
     "tiktok",
+    "bsky",
     "git",
     "timezone",
     "time",

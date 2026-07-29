@@ -9,11 +9,6 @@ fn is_tiktok_url(word: &str) -> bool {
     super::tiktok_handler::matches_tiktok_host(word)
 }
 
-fn clean_url(url: &str) -> &str {
-    let trimmed = url.trim_start_matches(|c: char| !c.is_alphanumeric());
-    trimmed.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '/')
-}
-
 pub async fn build_container(
     post: &TikTokPost,
     user_id: serenity::UserId,
@@ -76,7 +71,7 @@ pub async fn handle_tiktok_links(
         if !is_tiktok_url(word) {
             continue;
         }
-        let cleaned = clean_url(word);
+        let cleaned = shared::clean_media_url(word);
         if let Some(parsed) = TikTokPost::parse(cleaned)
             && seen.insert(parsed.clone())
         {
