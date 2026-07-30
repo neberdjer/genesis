@@ -7,7 +7,9 @@ use tracing::{debug, warn};
 
 fn is_twitter_url(word: &str) -> bool {
     let lower = word.to_ascii_lowercase();
-    if lower.contains("t.co/") {
+    if let Some(host) = shared::extract_host(&lower)
+        && shared::host_under_domain(host, "t.co")
+    {
         return true;
     }
     twitter_handler::matches_twitter_host(word) && lower.contains("/status/")
