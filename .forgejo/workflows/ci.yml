@@ -3,7 +3,6 @@ name: ci
 on:
   push:
     branches: ['**']
-    tags: ['[0-9]*']
 
 env:
   CARGO_HOME: ${{ github.workspace }}/.cargo
@@ -39,23 +38,13 @@ jobs:
 
   docker-build:
     needs: [fmt, clippy]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.ref == 'refs/heads/main'
     runs-on: privileged
     container:
       image: docker:cli
     steps:
       - run: apk add --no-cache nodejs git
       - uses: actions/checkout@v4
-      - name: Validate tag
-        env:
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          case "$REF_NAME" in
-            *[!A-Za-z0-9._-]*|"")
-              echo "Refusing tag with unsafe characters: $REF_NAME" >&2
-              exit 1
-              ;;
-          esac
       - name: Login
         env:
           REGISTRY: ${{ vars.DOCKER_REGISTRY }}
@@ -63,16 +52,11 @@ jobs:
           TOKEN: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
         run: |
           echo "$TOKEN" | docker login -u "$USERNAME" --password-stdin "$REGISTRY"
-      - name: Build
+      - name: Build and push
         env:
           IMAGE: ${{ vars.DOCKER_IMAGE_NAME }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
-          docker build -t "$IMAGE:$REF_NAME" -t "$IMAGE:latest" .
-      - name: Push
-        env:
-          IMAGE: ${{ vars.DOCKER_IMAGE_NAME }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          docker push "$IMAGE:$REF_NAME"
+          SHA="$(git rev-parse --short HEAD)"
+          docker build -t "$IMAGE:$SHA" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$SHA"
           docker push "$IMAGE:latest"
