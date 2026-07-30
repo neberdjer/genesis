@@ -1,3 +1,12 @@
+pub const BUILD_SHA: &str = match option_env!("VERGEN_GIT_SHA") {
+    Some(sha) => sha,
+    None => "dev",
+};
+pub const BUILD_DATE: &str = match option_env!("VERGEN_GIT_COMMIT_DATE") {
+    Some(date) => date,
+    None => "",
+};
+
 pub const EMBED_SUPPRESS_DELAY_MS: u64 = 500;
 pub const EMBED_SUPPRESS_RETRY_DELAY_MS: u64 = 3000;
 pub const DISCORD_MESSAGE_LIMIT: usize = 2000;

@@ -77,6 +77,16 @@ pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
     let blacklisted_servers = db::count_blacklisted_servers(pool).await.unwrap_or(0);
     let configured_servers = db::count_configured_servers(pool).await.unwrap_or(0);
 
+    let build = if crate::constants::BUILD_DATE.is_empty() {
+        crate::constants::BUILD_SHA.to_string()
+    } else {
+        format!(
+            "{} ({})",
+            crate::constants::BUILD_SHA,
+            crate::constants::BUILD_DATE
+        )
+    };
+
     let response = format!(
         "**Genesis Stats**\n\
          Servers: **{}** | Channels: **{}**\n\
@@ -84,7 +94,7 @@ pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
          Uptime: **{}**\n\
          Configured Servers: **{}**\n\
          Blacklisted Users: **{}** | Blacklisted Servers: **{}**\n\
-         Version: **{}**",
+         Build: **{}**",
         guild_count,
         channel_count,
         installed_users,
@@ -93,7 +103,7 @@ pub async fn stats(ctx: Context<'_>) -> Result<(), Error> {
         configured_servers,
         blacklisted_users,
         blacklisted_servers,
-        env!("CARGO_PKG_VERSION"),
+        build,
     );
 
     ctx.say(response).await?;

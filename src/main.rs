@@ -146,22 +146,22 @@ async fn status_poller(ctx: serenity::Context) {
 
 async fn register_commands_on_update(ctx: serenity::Context) {
     let data = ctx.data::<Data>();
-    let version = env!("CARGO_PKG_VERSION");
+    let build = constants::BUILD_SHA;
 
-    match db::get_meta(&data.pool, "registered_version").await {
-        Ok(Some(registered)) if registered == version => return,
+    match db::get_meta(&data.pool, "registered_build").await {
+        Ok(Some(registered)) if registered == build => return,
         Ok(_) => {}
         Err(e) => {
-            warn!("Failed to check registered command version: {}", e);
+            warn!("Failed to check registered command build: {}", e);
             return;
         }
     }
 
     match poise::builtins::register_globally(&ctx.http, &full_command_list()).await {
         Ok(()) => {
-            info!("Registered slash commands for version {}", version);
-            if let Err(e) = db::set_meta(&data.pool, "registered_version", version).await {
-                warn!("Failed to store registered command version: {}", e);
+            info!("Registered slash commands for build {}", build);
+            if let Err(e) = db::set_meta(&data.pool, "registered_build", build).await {
+                warn!("Failed to store registered command build: {}", e);
             }
         }
         Err(e) => error!("Failed to register slash commands: {}", e),
@@ -516,3 +516,4 @@ async fn main() -> Result<(), Error> {
         e.into()
     })
 }
+

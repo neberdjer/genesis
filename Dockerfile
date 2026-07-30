@@ -15,10 +15,12 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs
 
 RUN cargo build --release && rm -rf src
 
+COPY .git ./.git
+COPY build.rs ./
 COPY src ./src
 COPY migrations ./migrations
 
-RUN touch src/main.rs && cargo build --release
+RUN cargo build --release
 
 FROM debian:bookworm-slim AS runtime
 

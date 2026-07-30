@@ -1,6 +1,7 @@
 services:
     genesis:
         container_name: atums-genesis
+        image: genesis:latest
         build:
             context: .
         restart: unless-stopped

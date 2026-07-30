@@ -27,3 +27,6 @@ chrono-tz = "0.10"
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio"] }
 scraper = "0.20"
 rustls = { version = "0.23", features = ["ring"] }
+
+[build-dependencies]
+vergen-gitcl = "10.0.1"
