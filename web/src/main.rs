@@ -131,6 +131,11 @@ async fn main() {
             post(save_report_channel),
         )
         .route("/dashboard/{guild_id}/domains", post(save_domains))
+        .route("/dashboard/{guild_id}/domains/add", post(add_guild_domain))
+        .route(
+            "/dashboard/{guild_id}/domains/remove",
+            post(remove_guild_domain),
+        )
         .route("/dashboard/{guild_id}/commands", post(save_commands))
         .route("/dashboard/{guild_id}/delete", post(delete_server))
         .route("/account/delete", post(delete_account))
@@ -427,6 +432,8 @@ async fn guild_config(
     let mut audit_page = 1usize;
     let mut audit_total_pages = 1usize;
     let mut failures = Vec::new();
+    let mut failure_codes = Vec::new();
+    let mut failure_code = None;
     let mut failure_page = 1usize;
     let mut failure_total_pages = 1usize;
     match tab {
@@ -466,19 +473,31 @@ async fn guild_config(
                 .unwrap_or_default();
         }
         "failures" => {
-            let total = db::count_guild_failures(&state.pool, &guild_id)
+            failure_codes = db::failure_code_counts(&state.pool, Some(&guild_id))
                 .await
-                .unwrap_or(0)
-                .max(0) as usize;
+                .unwrap_or_default();
+            failure_code = query
+                .get("type")
+                .filter(|c| failure_codes.iter().any(|(k, _)| k == *c))
+                .cloned();
+            let total = failure_total(&failure_codes, failure_code.as_deref());
             let (p, tp, offset) = paginate(&query, total);
             failure_page = p;
             failure_total_pages = tp;
-            let (f, c) = tokio::join!(
-                db::list_guild_failures(&state.pool, &guild_id, PAGE_SIZE as i64, offset as i64),
-                discord::guild_channels(&state.http, &state.config, &guild_id),
-            );
-            failures = f.unwrap_or_default();
-            channels = c.unwrap_or_default();
+            failures = db::list_failures(
+                &state.pool,
+                Some(&guild_id),
+                failure_code.as_deref(),
+                PAGE_SIZE as i64,
+                offset as i64,
+            )
+            .await
+            .unwrap_or_default();
+        }
+        "services" => {
+            channels = discord::guild_channels(&state.http, &state.config, &guild_id)
+                .await
+                .unwrap_or_default();
         }
         _ => {}
     }
@@ -500,6 +519,8 @@ async fn guild_config(
             audit_page,
             audit_total_pages,
             &failures,
+            &failure_codes,
+            failure_code.as_deref(),
             failure_page,
             failure_total_pages,
             saved,
@@ -517,6 +538,25 @@ fn ajax_gate(access: &GuildAccess) -> Option<StatusCode> {
 }
 
 #[allow(clippy::result_large_err)]
+async fn form_guild_gate(
+    state: &AppState,
+    jar: &PrivateCookieJar,
+    guild_id: &str,
+    dest: &str,
+) -> Result<session::Session, Response> {
+    let Some(session) = session::read_session(jar) else {
+        return Err(Redirect::to("/login").into_response());
+    };
+    let access = load_guild(state, &session, guild_id).await;
+    if let Some(resp) = deny_mutation(&access, &session, dest) {
+        return Err(resp);
+    }
+    if !state.allow_save(&session.user.id).await {
+        return Err(Redirect::to(dest).into_response());
+    }
+    Ok(session)
+}
+
 async fn ajax_guild_gate(
     state: &AppState,
     jar: &PrivateCookieJar,
@@ -595,6 +635,18 @@ fn join_changes(groups: &[(&str, &[&str])]) -> Option<String> {
 }
 
 const PAGE_SIZE: usize = 10;
+
+fn failure_total(counts: &[(String, i64)], code: Option<&str>) -> usize {
+    let n: i64 = match code {
+        Some(code) => counts
+            .iter()
+            .find(|(c, _)| c == code)
+            .map(|(_, n)| *n)
+            .unwrap_or(0),
+        None => counts.iter().map(|(_, n)| n).sum(),
+    };
+    n.max(0) as usize
+}
 
 fn paginate(query: &HashMap<String, String>, total: usize) -> (usize, usize, usize) {
     let total_pages = total.div_ceil(PAGE_SIZE).max(1);
@@ -738,22 +790,14 @@ async fn save_report_channel(
     Path(guild_id): Path<String>,
     Form(form): Form<ReportChannelForm>,
 ) -> Response {
-    let Some(session) = session::read_session(&jar) else {
-        return Redirect::to("/login").into_response();
+    let dest = format!("/dashboard/{}?tab=services", guild_id);
+    let session = match form_guild_gate(&state, &jar, &guild_id, &dest).await {
+        Ok(session) => session,
+        Err(resp) => return resp,
     };
-    let access = load_guild(&state, &session, &guild_id).await;
-    if let Some(resp) = deny_mutation(
-        &access,
-        &session,
-        &format!("/dashboard/{}?tab=failures", guild_id),
-    ) {
-        return resp;
-    }
 
     let old = state.pool_settings(&guild_id).await;
     let channel = snowflake(&form.channel_id);
-
-    let dest = format!("/dashboard/{}?tab=failures", guild_id);
     match db::set_report_channel(&state.pool, &guild_id, channel).await {
         Ok(()) => {
             if old.report_channel_id.as_deref() != channel {
@@ -783,7 +827,8 @@ async fn save_domains(
     Path(guild_id): Path<String>,
     Form(form): Form<HashMap<String, String>>,
 ) -> Response {
-    let session = match ajax_guild_gate(&state, &jar, &guild_id).await {
+    let dest = format!("/dashboard/{}?tab=domains", guild_id);
+    let session = match form_guild_gate(&state, &jar, &guild_id, &dest).await {
         Ok(session) => session,
         Err(resp) => return resp,
     };
@@ -798,13 +843,11 @@ async fn save_domains(
     let media_hosts = media_hosts.unwrap_or_default();
     let current_set: HashSet<&str> = current.iter().map(String::as_str).collect();
 
-    let mut candidates: HashSet<&str> = catalog::DOMAIN_GROUPS
+    let candidates: HashSet<&str> = catalog::DOMAIN_GROUPS
         .iter()
         .flat_map(|g| g.domains.iter().copied())
+        .chain(catalog::extra_mirrors(&git_hosts, &media_hosts))
         .collect();
-    candidates.extend(git_hosts.iter().map(String::as_str));
-    candidates.extend(media_hosts.iter().map(|(_, d)| d.as_str()));
-    candidates.extend(current.iter().map(String::as_str));
 
     let mut blocked: Vec<&str> = Vec::new();
     let mut unblocked: Vec<&str> = Vec::new();
@@ -829,7 +872,75 @@ async fn save_domains(
     if let Some(s) = join_changes(&[("blocked", &blocked), ("unblocked", &unblocked)]) {
         audit(&state, &guild_id, &session, "domains", &s).await;
     }
-    StatusCode::NO_CONTENT.into_response()
+    (
+        session::set_saved(jar, state.config.cookie_secure),
+        Redirect::to(&dest),
+    )
+        .into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct DomainForm {
+    #[serde(default)]
+    domain: String,
+}
+
+async fn add_guild_domain(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Path(guild_id): Path<String>,
+    Form(f): Form<DomainForm>,
+) -> Response {
+    guild_domain(state, jar, guild_id, f, true).await
+}
+
+async fn remove_guild_domain(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Path(guild_id): Path<String>,
+    Form(f): Form<DomainForm>,
+) -> Response {
+    guild_domain(state, jar, guild_id, f, false).await
+}
+
+async fn guild_domain(
+    state: AppState,
+    jar: PrivateCookieJar,
+    guild_id: String,
+    f: DomainForm,
+    block: bool,
+) -> Response {
+    let dest = format!("/dashboard/{}?tab=domains", guild_id);
+    let session = match form_guild_gate(&state, &jar, &guild_id, &dest).await {
+        Ok(session) => session,
+        Err(resp) => return resp,
+    };
+
+    let domain = clean_domain(&f.domain).or_else(|| {
+        let raw = f.domain.trim().to_ascii_lowercase();
+        (!block && !raw.is_empty()).then_some(raw)
+    });
+
+    if let Some(d) = domain {
+        let result = if block {
+            db::add_domain(&state.pool, &guild_id, &d, &session.user.id).await
+        } else {
+            db::remove_domain(&state.pool, &guild_id, &d).await
+        };
+        match result {
+            Ok(()) => {
+                let verb = if block { "blocked" } else { "unblocked" };
+                audit(&state, &guild_id, &session, "domains", &format!("{verb} {d}")).await;
+            }
+            Err(e) => error!("blocked-domain update failed for {}: {}", d, e),
+        }
+    }
+
+    (
+        session::set_saved(jar, state.config.cookie_secure),
+        Redirect::to(&dest),
+    )
+        .into_response()
 }
 
 async fn save_commands(
@@ -963,6 +1074,8 @@ async fn owner_page(
     let mut total_pages = 1usize;
     let mut total = 0usize;
     let mut failures = Vec::new();
+    let mut failure_codes = Vec::new();
+    let mut failure_code = None;
     match tab {
         "servers" => {
             let (all, bl) =
@@ -1005,13 +1118,26 @@ async fn owner_page(
             status = db::get_bot_status(&state.pool).await.ok().flatten();
         }
         "failures" => {
-            total = db::count_failures(&state.pool).await.unwrap_or(0).max(0) as usize;
+            failure_codes = db::failure_code_counts(&state.pool, None)
+                .await
+                .unwrap_or_default();
+            failure_code = query
+                .get("type")
+                .filter(|c| failure_codes.iter().any(|(k, _)| k == *c))
+                .cloned();
+            total = failure_total(&failure_codes, failure_code.as_deref());
             let (p, tp, offset) = paginate(&query, total);
             page = p;
             total_pages = tp;
-            failures = db::list_failures(&state.pool, PAGE_SIZE as i64, offset as i64)
-                .await
-                .unwrap_or_default();
+            failures = db::list_failures(
+                &state.pool,
+                None,
+                failure_code.as_deref(),
+                PAGE_SIZE as i64,
+                offset as i64,
+            )
+            .await
+            .unwrap_or_default();
         }
         _ => {
             users = db::list_user_blacklist(&state.pool)
@@ -1038,6 +1164,8 @@ async fn owner_page(
             total_pages,
             total,
             &failures,
+            &failure_codes,
+            failure_code.as_deref(),
             saved,
         )),
     )

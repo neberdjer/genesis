@@ -214,6 +214,10 @@
 	padding: var(--spacing-2xl) var(--spacing-xl);
 }
 
+.main.wide {
+	max-width: 1280px;
+}
+
 .foot {
 	display: flex;
 	gap: var(--spacing-lg);

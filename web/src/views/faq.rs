@@ -27,6 +27,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                         li { "twitter / x, including fxtwitter and vxtwitter links" }
                         li { "instagram posts, reels, and full photo carousels" }
                         li { "tiktok videos and photo slideshows" }
+                        li { "bluesky posts, including images, video, and quotes" }
                         li { "github and gitlab file snippets and commit diffs" }
                     }
                     p { "it also has timezone tools and reminders. see the " a href="/features" { "features" } " page for the full list." }
@@ -51,12 +52,12 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
             details.faq-item {
                 summary.faq-q { "do i have to run a command every time?" }
                 div.faq-a {
-                    p { "no. once a service is enabled, just post a supported link in a channel and genesis replaces the broken preview automatically." }
+                    p { "no. once a service is enabled, post a supported link and genesis replaces the broken preview." }
                     p {
                         "the slash commands ("
                         code { "/twitter" } ", " code { "/instagram" } ", " code { "/tiktok" } ", "
-                        code { "/git" }
-                        ") are there for dms, group chats, or posting one on demand."
+                        code { "/bsky" } ", " code { "/git" }
+                        ") post one on demand, and work in dms and group chats."
                     }
                 }
             }
@@ -65,8 +66,8 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                 div.faq-a {
                     p {
                         "yes. the slash commands ("
-                        code { "/instagram" } ", " code { "/twitter" } ", " code { "/tiktok" } ", "
-                        code { "/git" } ", " code { "/timezone" }
+                        code { "/twitter" } ", " code { "/instagram" } ", " code { "/tiktok" } ", "
+                        code { "/bsky" } ", " code { "/git" } ", " code { "/timezone" }
                         ") work in dms and group chats if you added genesis to your account."
                     }
                 }
@@ -75,7 +76,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                 summary.faq-q { "can i post an embed just for myself?" }
                 div.faq-a {
                     p {
-                        "the " code { "/git" } " command takes an " code { "only_me" }
+                        "only for git links. " code { "/git" } " takes an " code { "only_me" }
                         " option that shows the result to you only. see the "
                         a href="/commands" { "commands" } " page for every command and its options."
                     }
@@ -123,7 +124,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                 }
             }
             details.faq-item {
-                summary.faq-q { "it isn't responding to links" }
+                summary.faq-q { "why isn't it responding to links?" }
                 div.faq-a {
                     p { "a few things to check:" }
                     ul {
@@ -157,7 +158,8 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
             details.faq-item {
                 summary.faq-q { "how do i remove it?" }
                 div.faq-a {
-                    p { "remove the bot from your server like any other; that clears your server's stored settings." }
+                    p { "remove the bot from your server like any other. that leaves its settings in place; \
+                         clear them from the danger zone tab first if you want them gone." }
                 }
             }
             details.faq-item {

@@ -45,7 +45,7 @@ pub fn landing(
     user: Option<&User>,
     deleted: Option<&str>,
 ) -> Markup {
-    let num = |n: Option<u64>| n.map(fmt_count).unwrap_or_else(|| "…".to_string());
+    let num = |n: Option<u64>| n.map(fmt_count).unwrap_or_else(|| "-".to_string());
 
     let body = html! {
         @if let Some(kind) = deleted {
@@ -60,7 +60,7 @@ pub fn landing(
         section.hero {
             img.hero-logo src="/static/logo.svg" alt="";
             h1 { "fixes broken social media embeds in discord" }
-            p { "paste a link. genesis replaces the broken preview with one that actually works, showing the video, every image, and the full text." }
+            p { "paste a link. genesis replies with the video, every image, and the full text." }
             div.cta {
                 (install_buttons(config))
                 @if user.is_some() {

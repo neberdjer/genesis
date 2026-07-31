@@ -11,7 +11,7 @@ pub fn dashboard(user: &User, guilds: &[DashGuild], config: &Config, is_owner: b
                 a.btn.sm href="/owner" { "global settings" }
             }
         }
-        p.muted { "configure genesis where the bot is in, add it where you can, and see where you can't." }
+        p.muted { "configure genesis where you manage it, and add it where you can." }
         div.servers {
             @for g in guilds {
                 @match g.state() {
@@ -37,7 +37,7 @@ pub fn dashboard(user: &User, guilds: &[DashGuild], config: &Config, is_owner: b
                         }
                     }
                     GuildState::CantAdd => {
-                        div.server.is-muted title="you need the Manage Server permission to add genesis here" {
+                        div.server.is-muted title="you need the manage server permission to add genesis here" {
                             img.icon src=(g.icon_url()) alt="";
                             span.name { (g.name) }
                             span.tag { "can't add" }
@@ -53,9 +53,9 @@ pub fn dashboard(user: &User, guilds: &[DashGuild], config: &Config, is_owner: b
         section.danger-zone {
             h2 { "your data" }
             p.muted {
-                "delete everything genesis has recorded about you: your dashboard change history "
-                "across every server. this signs you out and cannot be undone. it does not change "
-                "your servers' settings."
+                "delete your pending reminders and your dashboard change history across every "
+                "server. this signs you out and cannot be undone. it does not change your "
+                "servers' settings."
             }
             form method="post" action="/account/delete"
                 onsubmit="return confirm('delete all data about you and sign out? this cannot be undone.')" {

@@ -1,4 +1,6 @@
 use crate::discord::User;
+use std::borrow::Cow;
+use std::collections::HashSet;
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 const THEME_INIT: &str = r#"(function(){var m=null;try{m=localStorage.getItem("theme")}catch(_){}if(m!=="light"&&m!=="dark")m="system";var t=m==="system"?(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):m;var r=document.documentElement;r.setAttribute("data-theme",t);r.setAttribute("data-theme-mode",m);})();"#;
@@ -48,32 +50,200 @@ pub(super) fn link_or_code(url: &str) -> Markup {
     }
 }
 
-pub(super) fn failure_rows(entries: &[crate::db::FailureEntry], show_guild: bool) -> Markup {
+const FAILURE_CODES: &[(&str, &str, &str)] = &[
+    (
+        "fetch_failed",
+        "fetch failed",
+        "genesis couldn't reach the service, or it returned an error",
+    ),
+    (
+        "send_failed",
+        "send failed",
+        "the embed was built but discord refused the message, usually a missing permission",
+    ),
+    (
+        "too_long",
+        "too long",
+        "the result didn't fit in a discord message",
+    ),
+];
+
+fn failure_meta(code: &str) -> (&'static str, Cow<'_, str>, Cow<'_, str>) {
+    match FAILURE_CODES.iter().find(|(k, _, _)| *k == code) {
+        Some((key, label, desc)) => (key, Cow::Borrowed(*label), Cow::Borrowed(*desc)),
+        None => (
+            "other",
+            Cow::Owned(code.replace('_', " ")),
+            Cow::Owned(format!("failure code: {code}")),
+        ),
+    }
+}
+
+fn service_label(service: &str) -> Cow<'_, str> {
+    if service.contains('_') {
+        Cow::Owned(service.replace('_', " "))
+    } else {
+        Cow::Borrowed(service)
+    }
+}
+
+pub(super) fn failure_filters(
+    base: &str,
+    active: Option<&str>,
+    counts: &[(String, i64)],
+) -> Markup {
+    let total: i64 = counts.iter().map(|(_, n)| n).sum();
+    let mut ordered: Vec<(&str, Cow<'_, str>, i64)> = counts
+        .iter()
+        .map(|(code, n)| (code.as_str(), failure_meta(code).1, *n))
+        .collect();
+    ordered.sort_by_key(|(code, ..)| {
+        FAILURE_CODES
+            .iter()
+            .position(|(k, ..)| k == code)
+            .unwrap_or(usize::MAX)
+    });
+
     html! {
-        ul.audit-log {
-            @for e in entries {
-                li.audit-row {
-                    div.audit-head {
-                        span.audit-cat { (e.service) }
-                        span.audit-time {
-                            (e.code)
-                            @if show_guild {
-                                @if let Some(gid) = &e.guild_id {
-                                    " · server " (gid)
-                                }
-                            }
-                            " · " (e.at)
-                        }
-                    }
-                    div.audit-action {
-                        @if let Some(url) = &e.url {
-                            (link_or_code(url))
-                            br;
-                        }
-                        (e.detail)
+        @if !counts.is_empty() {
+            nav.filter-bar aria-label="filter by failure type" {
+                a class=(if active.is_none() { "filter-chip active" } else { "filter-chip" })
+                  href=(base)
+                  aria-current=[active.is_none().then_some("true")] {
+                    "all" span.filter-count { (total) }
+                }
+                @for (code, label, n) in &ordered {
+                    @let is_active = active == Some(*code);
+                    a class=(if is_active { "filter-chip active" } else { "filter-chip" })
+                      href=(format!("{base}&type={code}"))
+                      aria-current=[is_active.then_some("true")] {
+                        (label) span.filter-count { (n) }
                     }
                 }
             }
+        }
+    }
+}
+
+pub(super) fn failure_rows(entries: &[crate::db::FailureEntry], show_guild: bool) -> Markup {
+    html! {
+        ul.failure-log {
+            @for e in entries {
+                @let (kind, label, desc) = failure_meta(&e.code);
+                li.failure-row.{ "is-" (kind) } {
+                    div.failure-head {
+                        span.failure-type title=(desc) { (label) }
+                        span.failure-service { (service_label(&e.service)) }
+                        span.failure-time { (e.at) }
+                    }
+                    @if let Some(url) = &e.url {
+                        div.failure-url title=(url) { (link_or_code(url)) }
+                    }
+                    p.failure-detail title=(e.detail) { (e.detail) }
+                    @if show_guild {
+                        @if let Some(gid) = &e.guild_id {
+                            div.failure-meta { "server " span.failure-guild { (gid) } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn toggle_state(on: usize, total: usize, word: &str) -> String {
+    if total > 0 && on == total {
+        format!("all {word}")
+    } else if on == 0 {
+        format!("none {word}")
+    } else {
+        format!("{on} of {total} {word}")
+    }
+}
+
+pub(super) fn toggle_row(
+    label: &str,
+    legend: &str,
+    chip_class: &str,
+    word: &str,
+    items: &[(&str, bool)],
+) -> Markup {
+    let on = items.iter().filter(|(_, checked)| *checked).count();
+    html! {
+        div.opt-row data-toggle-group {
+            label.opt-row-head {
+                input type="checkbox" data-toggle-parent checked[on == items.len()];
+                span.checkbox aria-hidden="true" {}
+                span.opt-row-title { (label) }
+                span.opt-row-count data-toggle-count data-toggle-word=(word) {
+                    (toggle_state(on, items.len(), word))
+                }
+            }
+            fieldset.check-grid {
+                legend.visually-hidden { (legend) }
+                @for (name, checked) in items {
+                    label class=(chip_class) {
+                        input type="checkbox" name=(*name) checked[*checked];
+                        span { (name) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn panel_intro(hint: &str) -> Markup {
+    html! {
+        p.field-hint { (hint) }
+    }
+}
+
+pub(super) fn panel_head(title: &str, hint: &str) -> Markup {
+    html! {
+        h2.group-title { span.group-label { (title) } }
+        p.field-hint { (hint) }
+    }
+}
+
+pub(super) fn failure_list(
+    base: &str,
+    active: Option<&str>,
+    counts: &[(String, i64)],
+    entries: &[crate::db::FailureEntry],
+    show_guild: bool,
+    page: usize,
+    total_pages: usize,
+) -> Markup {
+    let paged_base = match active {
+        Some(code) => Cow::Owned(format!("{base}&type={code}")),
+        None => Cow::Borrowed(base),
+    };
+    html! {
+        (failure_filters(base, active, counts))
+        @if entries.is_empty() {
+            @if active.is_some() {
+                p.muted { "no failures of this type." }
+            } @else {
+                p.muted { "no failures recorded." }
+            }
+        } @else {
+            (failure_rows(entries, show_guild))
+            (pager(&paged_base, page, total_pages))
+        }
+    }
+}
+
+pub(super) fn command_toggles(action: &str, disabled: &HashSet<&str>) -> Markup {
+    html! {
+        form.config-form.autosave.row-form data-group-toggles method="post" action=(action) {
+            @for (title, names) in crate::catalog::toggleable_command_groups() {
+                @let items: Vec<(&str, bool)> = names
+                    .iter()
+                    .map(|n| (*n, !disabled.contains(n)))
+                    .collect();
+                (toggle_row(title, &format!("{title} commands"), "check", "enabled", &items))
+            }
+            div.row-form-actions { span.save-status aria-live="polite" {} }
         }
     }
 }
@@ -104,6 +274,20 @@ fn nav_link(href: &str, label: &str, active: &str) -> Markup {
 }
 
 pub(super) fn layout(title: &str, active: &str, user: Option<&User>, body: Markup) -> Markup {
+    layout_inner(title, active, user, body, false)
+}
+
+pub(super) fn layout_wide(title: &str, active: &str, user: Option<&User>, body: Markup) -> Markup {
+    layout_inner(title, active, user, body, true)
+}
+
+fn layout_inner(
+    title: &str,
+    active: &str,
+    user: Option<&User>,
+    body: Markup,
+    wide: bool,
+) -> Markup {
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -160,7 +344,7 @@ pub(super) fn layout(title: &str, active: &str, user: Option<&User>, body: Marku
                         }
                       }
                     }
-                    main.main #main tabindex="-1" { (body) }
+                    main #main class=(if wide { "main wide" } else { "main" }) tabindex="-1" { (body) }
                     footer.foot {
                         nav.foot-links {
                             a href="/tos" { "terms" }

@@ -20,7 +20,7 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
             h2.faq-section { "what genesis reads" }
             p {
                 "to find supported links, genesis reads the text of messages in servers it's in "
-                "(discord's “message content” permission). this happens in memory, as messages arrive "
+                "(discord's \"message content\" permission). this happens in memory, as messages arrive "
                 "or are edited, purely to spot links worth re-embedding. message text is never written "
                 "to a database or a log."
             }
@@ -41,21 +41,21 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
                 li { "which commands are turned off, per server or globally" }
                 li { "self-hosted git hosts an operator has added, and the bot's configured status" }
                 li { "blacklisted user and server ids, with an optional reason" }
-                li { "reminders you set: your user id, the channel to ping you in, when to fire, and the reminder text you typed. a reminder is deleted as soon as it fires (snoozing simply reschedules it)" }
-                li { "failed embeds: details of links that failed to embed, kept for up to 30 days so failures can be diagnosed — see failure reports below" }
+                li { "reminders you set: your user id, the channel to ping you in, when to fire, and the reminder text you typed. a reminder is deleted as soon as it fires (snoozing reschedules it)" }
+                li { "failed embeds: details of links that failed to embed, kept for up to 30 days so failures can be diagnosed (see failure reports below)" }
             }
             p {
                 "when a setting is changed, we also store the discord id of whoever changed it, so it "
-                "can be audited. beyond that, the only personal id we keep is yours on reminders "
-                "you've set."
+                "can be audited. beyond that, the personal ids we keep are yours on reminders you've "
+                "set, and any blacklisted user ids."
             }
 
             h2.faq-section { "usage stats" }
             p {
                 "genesis keeps anonymous, aggregate counters: how many times each command has been run, "
-                "and how many embeds per platform succeeded or failed. the counters themselves are plain "
-                "totals, with no link to any user, server, message, or link. failed embeds are also "
-                "recorded individually — see failure reports below."
+                "and how many embeds per platform succeeded or failed. the counters are plain totals, "
+                "not tied to any user, server, message, or url. failed embeds are also "
+                "recorded individually; see below."
             }
 
             h2.faq-section { "failure reports" }
@@ -64,8 +64,8 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
                 "server id, and a short error message, and deletes the record after 30 days. server "
                 "admins can set a report channel (" code { "/settings report_channel" } " or the "
                 "dashboard) that receives that server's failures. the bot's operator also has a global "
-                "report channel and a dashboard view that receive these reports — including the failed "
-                "link — from every server, so recurring breakage can be spotted and fixed. successful "
+                "report channel and a dashboard view that receive these reports, including the failed "
+                "link, from every server, so recurring breakage can be spotted and fixed. successful "
                 "embeds are never recorded this way."
             }
 
@@ -122,7 +122,7 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
             p { "or email " a href=(format!("mailto:{}", config.contact_email)) { (config.contact_email) } "." }
 
             h2.faq-section { "changes" }
-            p { "we may update this policy as genesis changes; the date above is the latest version." }
+            p { "we may update this policy as genesis changes; the date above is when it last changed." }
         }
     };
     layout("privacy", "", user, body)

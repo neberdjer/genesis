@@ -7,7 +7,7 @@ pub fn features(user: Option<&User>) -> Markup {
     let body = html! {
         div.page-intro {
             h1 { "features" }
-            p.muted { "paste a supported link and genesis replaces the broken preview with one that actually works." }
+            p.muted { "everything genesis supports." }
         }
         @for group in FEATURE_GROUPS {
             section.group {

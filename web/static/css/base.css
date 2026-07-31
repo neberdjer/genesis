@@ -19,6 +19,10 @@
 
 	--color-success: #34d399;
 	--color-error: #f87171;
+	--color-warning: #fbbf24;
+	--color-info: #60a5fa;
+	--color-error-muted: #2c1519;
+	--color-error-muted-hover: #3b1a20;
 
 	--spacing-xs: 0.25rem;
 	--spacing-sm: 0.5rem;
@@ -66,6 +70,11 @@
 	--color-accent-muted: #d8ecf7;
 	--color-on: #047857;
 	--color-success: #047857;
+	--color-error: #b91c1c;
+	--color-warning: #a16207;
+	--color-info: #1d4ed8;
+	--color-error-muted: #fbe4e4;
+	--color-error-muted-hover: #f6d2d2;
 
 	color-scheme: light;
 }

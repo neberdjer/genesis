@@ -1,3 +1,4 @@
+use std::sync::LazyLock;
 pub struct Feature {
     pub icon: &'static str,
     pub title: &'static str,
@@ -21,7 +22,7 @@ pub const FEATURE_GROUPS: &[FeatureGroup] = &[
             Feature {
                 icon: "instagram",
                 title: "instagram",
-                desc: "posts, reels, and full photo carousels with no missing slides",
+                desc: "posts, reels, and full photo carousels",
             },
             Feature {
                 icon: "tiktok",
@@ -31,11 +32,11 @@ pub const FEATURE_GROUPS: &[FeatureGroup] = &[
             Feature {
                 icon: "bsky",
                 title: "bluesky",
-                desc: "posts, images, video, quotes, and link cards",
+                desc: "posts, images, videos, quotes, and link cards",
             },
             Feature {
                 icon: "github",
-                title: "github and gitlab",
+                title: "github / gitlab",
                 desc: "file snippets and commit diffs with pagination",
             },
         ],
@@ -56,7 +57,7 @@ pub const FEATURE_GROUPS: &[FeatureGroup] = &[
             Feature {
                 icon: "user",
                 title: "works anywhere",
-                desc: "add genesis to your own account and use the slash commands in any dm or group chat, not just servers",
+                desc: "add genesis to your account and use its commands in any dm or group chat",
             },
         ],
     },
@@ -168,7 +169,7 @@ pub const COMMAND_GROUPS: &[Group] = &[
             },
             Command {
                 usage: "/bsky <url>",
-                desc: "post a bluesky post (text, images, video, quotes)",
+                desc: "post a bluesky link (text, images, video, quotes)",
             },
             Command {
                 usage: "/tiktok <url>",
@@ -190,7 +191,7 @@ pub const COMMAND_GROUPS: &[Group] = &[
         commands: &[
             Command {
                 usage: "/reminder add <duration> [reminder]",
-                desc: "set a reminder (e.g. 10m, 1h30m, 2d), pings you when it's due",
+                desc: "set a reminder (e.g. 10m, 1h30m, 2d)",
             },
             Command {
                 usage: "/reminder list",
@@ -256,13 +257,13 @@ pub const COMMAND_GROUPS: &[Group] = &[
             },
             Command {
                 usage: "/welcome",
-                desc: "configure welcome messages for new members",
+                desc: "configure welcome messages",
             },
         ],
     },
     Group {
         title: "moderation",
-        note: "requires the matching permission",
+        note: "requires ban or kick permission",
         commands: &[
             Command {
                 usage: "/ban <user> [delete_days] [softban] [reason]",
@@ -280,6 +281,7 @@ pub const TOGGLEABLE_COMMANDS: &[&str] = &[
     "instagram",
     "twitter",
     "tiktok",
+    "bsky",
     "git",
     "timezone",
     "time",
@@ -292,4 +294,63 @@ pub const TOGGLEABLE_COMMANDS: &[&str] = &[
 
 pub fn toggleable_commands() -> Vec<&'static str> {
     TOGGLEABLE_COMMANDS.to_vec()
+}
+
+fn command_name(usage: &'static str) -> Option<&'static str> {
+    usage.trim_start_matches('/').split_whitespace().next()
+}
+
+fn build_toggleable_command_groups() -> Vec<(&'static str, Vec<&'static str>)> {
+    let mut placed: Vec<&'static str> = Vec::new();
+    let mut groups: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
+
+    for group in COMMAND_GROUPS {
+        let mut names: Vec<&'static str> = Vec::new();
+        for command in group.commands {
+            let Some(name) = command_name(command.usage) else {
+                continue;
+            };
+            if TOGGLEABLE_COMMANDS.contains(&name) && !names.contains(&name) {
+                names.push(name);
+                placed.push(name);
+            }
+        }
+        if !names.is_empty() {
+            groups.push((group.title, names));
+        }
+    }
+
+    let rest: Vec<&'static str> = TOGGLEABLE_COMMANDS
+        .iter()
+        .copied()
+        .filter(|c| !placed.contains(c))
+        .collect();
+    if !rest.is_empty() {
+        groups.push(("other", rest));
+    }
+
+    groups
+}
+
+static TOGGLEABLE_COMMAND_GROUPS: LazyLock<Vec<(&'static str, Vec<&'static str>)>> =
+    LazyLock::new(build_toggleable_command_groups);
+
+pub fn toggleable_command_groups() -> &'static [(&'static str, Vec<&'static str>)] {
+    &TOGGLEABLE_COMMAND_GROUPS
+}
+
+pub fn extra_mirrors<'a>(
+    git_hosts: &'a [String],
+    media_hosts: &'a [(String, String)],
+) -> Vec<&'a str> {
+    let mut known: std::collections::HashSet<&str> = DOMAIN_GROUPS
+        .iter()
+        .flat_map(|g| g.domains.iter().copied())
+        .collect();
+    git_hosts
+        .iter()
+        .map(String::as_str)
+        .chain(media_hosts.iter().map(|(_, d)| d.as_str()))
+        .filter(|d| known.insert(d))
+        .collect()
 }

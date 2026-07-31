@@ -663,15 +663,10 @@ fn failure_from_row(r: sqlx::postgres::PgRow) -> FailureEntry {
     }
 }
 
-pub async fn count_failures(pool: &Pool) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query("SELECT COUNT(*) AS n FROM embed_failures")
-        .fetch_one(pool)
-        .await?;
-    row.try_get("n")
-}
-
 pub async fn list_failures(
     pool: &Pool,
+    guild_id: Option<&str>,
+    code: Option<&str>,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<FailureEntry>, sqlx::Error> {
@@ -679,46 +674,45 @@ pub async fn list_failures(
         r#"
         SELECT service, code, url, guild_id, detail, to_char(created_at, 'YYYY-MM-DD HH24:MI') AS at
         FROM embed_failures
+        WHERE ($1::text IS NULL OR guild_id = $1)
+          AND ($2::text IS NULL OR code = $2)
         ORDER BY created_at DESC
-        LIMIT $1 OFFSET $2
-        "#,
-    )
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows.into_iter().map(failure_from_row).collect())
-}
-
-pub async fn count_guild_failures(pool: &Pool, guild_id: &str) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query("SELECT COUNT(*) AS n FROM embed_failures WHERE guild_id = $1")
-        .bind(guild_id)
-        .fetch_one(pool)
-        .await?;
-    row.try_get("n")
-}
-
-pub async fn list_guild_failures(
-    pool: &Pool,
-    guild_id: &str,
-    limit: i64,
-    offset: i64,
-) -> Result<Vec<FailureEntry>, sqlx::Error> {
-    let rows = sqlx::query(
-        r#"
-        SELECT service, code, url, guild_id, detail, to_char(created_at, 'YYYY-MM-DD HH24:MI') AS at
-        FROM embed_failures
-        WHERE guild_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2 OFFSET $3
+        LIMIT $3 OFFSET $4
         "#,
     )
     .bind(guild_id)
+    .bind(code)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
     .await?;
 
     Ok(rows.into_iter().map(failure_from_row).collect())
+}
+
+pub async fn failure_code_counts(
+    pool: &Pool,
+    guild_id: Option<&str>,
+) -> Result<Vec<(String, i64)>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT code, COUNT(*) AS n FROM embed_failures
+        WHERE ($1::text IS NULL OR guild_id = $1)
+        GROUP BY code
+        ORDER BY n DESC, code
+        "#,
+    )
+    .bind(guild_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                r.try_get("code").unwrap_or_default(),
+                r.try_get("n").unwrap_or_default(),
+            )
+        })
+        .collect())
 }

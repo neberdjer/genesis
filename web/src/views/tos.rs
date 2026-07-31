@@ -18,9 +18,8 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
 
             h2.faq-section { "what genesis does" }
             p {
-                "when a service is enabled, genesis watches for supported links in new and edited messages and, when it finds one, "
-                "replies with a clean embed in its place. it does this automatically; you don't run a "
-                "command each time."
+                "when a service is enabled, genesis watches for supported links in new and edited "
+                "messages and replies with a clean embed in its place. you don't run a command each time."
             }
             ul {
                 li {
@@ -28,7 +27,7 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
                     "re-uploads it to discord, then hides the preview on your original message. it does "
                     "not delete your message."
                 }
-                li { "bluesky: it posts the post's text, images, video, quotes, and link cards." }
+                li { "bluesky: it posts the text, images, video, quotes, and link cards." }
                 li { "github, gitlab, and self-hosted git hosts: it posts file snippets and commit or compare diffs." }
                 li {
                     "utility commands such as " code { "/git" } ", " code { "/timezone" } ", "
@@ -68,10 +67,10 @@ pub fn tos(config: &Config, user: Option<&User>) -> Markup {
 
             h2.faq-section { "permissions" }
             p {
-                "genesis needs to read and send messages, embed links, and attach files. it uses “manage "
-                "messages” to hide the preview on your original link, “manage roles” for welcome roles, "
-                "and “view audit log” for the optional reply-cleanup feature. without a permission, the "
-                "related feature simply doesn't run."
+                "genesis needs to read and send messages, embed links, and attach files. it uses \"manage "
+                "messages\" to hide the preview on your original link, \"manage roles\" for welcome roles, "
+                "and \"view audit log\" for the optional reply-cleanup feature. without a permission, the "
+                "related feature doesn't run."
             }
 
             h2.faq-section { "enforcement" }

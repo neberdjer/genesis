@@ -1,5 +1,8 @@
-use super::layout::{failure_rows, layout, pager};
-use crate::catalog::{DOMAIN_GROUPS, toggleable_commands};
+use super::layout::{
+    command_toggles, failure_list, layout_wide, pager, panel_head, panel_intro, toggle_row,
+    toggle_state,
+};
+use crate::catalog::{self, DOMAIN_GROUPS};
 use crate::db::{AuditEntry, FailureEntry, SERVICES, Settings};
 use crate::discord::{DashGuild, GuildChannel, GuildRole, User};
 use maud::{Markup, html};
@@ -29,27 +32,56 @@ fn tabs(guild_id: &str, active: &str) -> Markup {
     }
 }
 
-fn services_panel(guild: &DashGuild, settings: &Settings) -> Markup {
+fn services_panel(guild: &DashGuild, settings: &Settings, channels: &[GuildChannel]) -> Markup {
+    let selected = settings.report_channel_id.as_deref();
     html! {
-        p.muted { "choose which links genesis re-embeds in this server." }
-        form.config-form.autosave method="post" action=(format!("/dashboard/{}/settings", guild.id)) {
-            fieldset.check-grid {
-                legend.visually-hidden { "services to enable" }
-                @for (key, label) in SERVICES {
-                    label.check {
-                        input type="checkbox" name=(*key) checked[settings.enabled(key)];
-                        span { (label) }
+        section.group {
+            (panel_intro("choose which links genesis re-embeds in this server."))
+            form.config-form.autosave method="post" action=(format!("/dashboard/{}/settings", guild.id)) {
+                fieldset.check-grid {
+                    legend.visually-hidden { "services to enable" }
+                    @for (key, label) in SERVICES {
+                        label.check {
+                            input type="checkbox" name=(*key) checked[settings.enabled(key)];
+                            span { (label) }
+                        }
                     }
                 }
-            }
 
-            label.toggle {
-                input type="checkbox" name="reply_cleanup" checked[settings.reply_cleanup];
-                span { "clean up replies on mod-delete" }
-            }
-            p.field-hint { "if a moderator deletes the original message within a minute, genesis deletes its reply too. requires the bot's view audit log permission." }
+                label.toggle {
+                    input type="checkbox" name="reply_cleanup" checked[settings.reply_cleanup];
+                    span { "clean up replies on mod-delete" }
+                }
+                p.field-hint { "if a moderator deletes the original message within a minute, genesis deletes its reply too. requires the bot's view audit log permission." }
 
-            span.save-status aria-live="polite" {}
+                span.save-status aria-live="polite" {}
+            }
+        }
+
+        section.group {
+            (panel_head(
+                "report channel",
+                "where genesis posts embed failures as they happen. they're listed on the \
+                 failure reports tab either way.",
+            ))
+            form.config-form.inline-form method="post"
+                 action=(format!("/dashboard/{}/report-channel", guild.id)) {
+                div.field {
+                    label.visually-hidden for="report-channel" { "report channel" }
+                    select #report-channel name="channel_id" {
+                        option value="" selected[selected.is_none()] { "none (reports off)" }
+                        @for c in channels {
+                            option value=(c.id) selected[selected == Some(c.id.as_str())] {
+                                "#" (c.name)
+                            }
+                        }
+                    }
+                }
+                button.btn.primary type="submit" { "save" }
+            }
+            @if channels.is_empty() {
+                p.field-hint { "no channels found, or the bot can't view them." }
+            }
         }
     }
 }
@@ -63,7 +95,8 @@ fn welcome_panel(
     let selected_channel = settings.welcome_channel_id.as_deref();
     let selected_role = settings.welcome_role_id.as_deref();
     html! {
-        p.muted { "greet new members with a message, and optionally give them a role." }
+      section.group {
+        (panel_intro("greet new members and optionally give them a role."))
         form.config-form method="post" action=(format!("/dashboard/{}/welcome", guild.id)) {
             label.toggle {
                 input type="checkbox" name="enabled" checked[settings.welcome_enabled];
@@ -105,40 +138,29 @@ fn welcome_panel(
 
             div { button.btn.primary type="submit" { "save welcome" } }
         }
+      }
     }
 }
 
 fn commands_panel(guild: &DashGuild, disabled: &[String]) -> Markup {
     let disabled: HashSet<&str> = disabled.iter().map(String::as_str).collect();
     html! {
-        p.muted { "turn commands off in this server. enabled commands are highlighted." }
-        form.config-form.autosave method="post" action=(format!("/dashboard/{}/commands", guild.id)) {
-            fieldset.check-grid {
-                legend.visually-hidden { "enabled commands" }
-                @for name in toggleable_commands() {
-                    label.check {
-                        input type="checkbox" name=(name) checked[!disabled.contains(name)];
-                        span { (name) }
-                    }
-                }
-            }
-            span.save-status aria-live="polite" {}
+        section.group {
+            (panel_intro("turn commands off in this server."))
+            (command_toggles(&format!("/dashboard/{}/commands", guild.id), &disabled))
         }
     }
 }
 
-fn domain_checks(domains: &[&str], blocked: &HashSet<&str>) -> Markup {
-    html! {
-        fieldset.check-grid {
-            legend.visually-hidden { "domains to block" }
-            @for d in domains {
-                label.check {
-                    input type="checkbox" name=(*d) checked[blocked.contains(d)];
-                    span { (d) }
-                }
-            }
-        }
-    }
+fn domain_group(label: &str, domains: &[&str], blocked: &HashSet<&str>) -> Markup {
+    let items: Vec<(&str, bool)> = domains.iter().map(|d| (*d, blocked.contains(d))).collect();
+    toggle_row(
+        label,
+        &format!("{label} domains to block"),
+        "check block",
+        "blocked",
+        &items,
+    )
 }
 
 fn domains_panel(
@@ -148,59 +170,97 @@ fn domains_panel(
     media_hosts: &[(String, String)],
 ) -> Markup {
     let blocked_set: HashSet<&str> = blocked.iter().map(String::as_str).collect();
+    let extra = catalog::extra_mirrors(git_hosts, media_hosts);
 
-    let mut known: HashSet<&str> = DOMAIN_GROUPS
+    let mirror_total = DOMAIN_GROUPS.iter().map(|g| g.domains.len()).sum::<usize>() + extra.len();
+    let mirror_blocked = DOMAIN_GROUPS
         .iter()
         .flat_map(|g| g.domains.iter().copied())
-        .collect();
-    let custom: Vec<&str> = git_hosts
-        .iter()
-        .map(String::as_str)
-        .chain(media_hosts.iter().map(|(_, d)| d.as_str()))
-        .chain(blocked.iter().map(String::as_str))
-        .filter(|d| known.insert(d))
-        .collect();
+        .chain(extra.iter().copied())
+        .filter(|d| blocked_set.contains(d))
+        .count();
 
     html! {
-        p.muted { "tick a domain to stop genesis embedding its links in this server. each platform and its mirror domains can be blocked separately." }
-        form.config-form.autosave method="post" action=(format!("/dashboard/{}/domains", guild.id)) {
-            @for g in DOMAIN_GROUPS {
-                h3 { (g.label) }
-                (domain_checks(g.domains, &blocked_set))
+        section.group {
+            (panel_intro(
+                "block a domain and genesis stops re-embedding its links in this server. \
+                 subdomains are blocked too.",
+            ))
+
+            form.add-row method="post" action=(format!("/dashboard/{}/domains/add", guild.id)) {
+                input type="text" name="domain" placeholder="example.com"
+                      aria-label="domain to block" required;
+                button.btn.sm type="submit" { "block" }
             }
-            @if !custom.is_empty() {
-                h3 { "custom domains" }
-                p.field-hint { "extra git and mirror domains added by the bot owner." }
-                (domain_checks(&custom, &blocked_set))
+
+            @if blocked.is_empty() {
+                p.muted { "nothing is blocked in this server." }
+            } @else {
+                ul.idlist {
+                    @for d in blocked {
+                        li {
+                            span.idlist-id { (d) }
+                            form.idlist-form method="post"
+                                 action=(format!("/dashboard/{}/domains/remove", guild.id)) {
+                                input type="hidden" name="domain" value=(d);
+                                button.idlist-remove type="submit" aria-label=(format!("unblock {d}"))
+                                        title="unblock" { "×" }
+                            }
+                        }
+                    }
+                }
             }
-            span.save-status aria-live="polite" {}
+        }
+
+        section.group {
+            details.disclosure open[mirror_blocked > 0] {
+                summary.disclosure-head {
+                    span.disclosure-title { "platform mirrors" }
+                    span.group-count data-toggle-summary data-toggle-word="blocked" {
+                        (toggle_state(mirror_blocked, mirror_total, "blocked"))
+                    }
+                }
+                div.disclosure-body {
+                    p.field-hint { "tick a platform, or individual mirrors, instead of typing them out." }
+                    form.config-form.row-form data-group-toggles method="post"
+                         action=(format!("/dashboard/{}/domains", guild.id)) {
+                        @for g in DOMAIN_GROUPS {
+                            (domain_group(g.label, g.domains, &blocked_set))
+                        }
+                        @if !extra.is_empty() {
+                            (domain_group("custom", &extra, &blocked_set))
+                        }
+                        div.row-form-actions { button.btn.primary type="submit" { "save mirrors" } }
+                    }
+                }
+            }
         }
     }
 }
 
 fn audit_panel(entries: &[AuditEntry], guild_id: &str, page: usize, total_pages: usize) -> Markup {
     html! {
-        p.muted { "configuration changes made from the dashboard, newest first." }
-        @if entries.is_empty() {
-            p.muted { "no changes recorded yet." }
-        } @else {
-            ul.audit-log {
-                @for e in entries {
-                    li.audit-row {
-                        div.audit-head {
-                            @if !e.category.is_empty() {
-                                span.audit-cat { (e.category) }
-                            }
-                            span.audit-time {
+        section.group {
+            (panel_intro("configuration changes made from the dashboard, newest first."))
+            @if entries.is_empty() {
+                p.muted { "no changes recorded yet." }
+            } @else {
+                ul.audit-log {
+                    @for e in entries {
+                        li.audit-row {
+                            div.audit-head {
+                                @if !e.category.is_empty() {
+                                    span.audit-cat { (e.category) }
+                                }
                                 span.audit-actor { (e.actor_name) }
-                                " · " (e.at)
+                                span.audit-time { (e.at) }
                             }
+                            p.audit-action title=(e.action) { (e.action) }
                         }
-                        div.audit-action { (e.action) }
                     }
                 }
+                (pager(&format!("/dashboard/{}?tab=audit", guild_id), page, total_pages))
             }
-            (pager(&format!("/dashboard/{}?tab=audit", guild_id), page, total_pages))
         }
     }
 }
@@ -208,54 +268,41 @@ fn audit_panel(entries: &[AuditEntry], guild_id: &str, page: usize, total_pages:
 fn failures_panel(
     guild: &DashGuild,
     settings: &Settings,
-    channels: &[GuildChannel],
     entries: &[FailureEntry],
+    code_counts: &[(String, i64)],
+    active_code: Option<&str>,
     page: usize,
     total_pages: usize,
 ) -> Markup {
-    let selected = settings.report_channel_id.as_deref();
+    let base = format!("/dashboard/{}?tab=failures", guild.id);
     html! {
-        p.muted {
-            "links genesis failed to embed in this server over the last 30 days, and an optional "
-            "channel where new failures are posted as they happen."
-        }
-        form.config-form method="post" action=(format!("/dashboard/{}/report-channel", guild.id)) {
-            div.field {
-                label for="report-channel" { "report channel" }
-                select #report-channel name="channel_id" {
-                    option value="" selected[selected.is_none()] { "none (reports off)" }
-                    @for c in channels {
-                        option value=(c.id) selected[selected == Some(c.id.as_str())] {
-                            "#" (c.name)
-                        }
-                    }
+        section.group {
+            p.field-hint {
+                "links genesis failed to embed in this server over the last 30 days, newest first. "
+                @if settings.report_channel_id.is_some() {
+                    "they're also posted to your report channel as they happen; change it on the "
+                } @else {
+                    "genesis can post them to a channel as they happen; pick one on the "
                 }
-                @if channels.is_empty() {
-                    p.field-hint { "no channels found, or the bot can't view them." }
-                }
+                a href=(format!("/dashboard/{}?tab=services", guild.id)) { "services tab" } "."
             }
-            div { button.btn.primary type="submit" { "save report channel" } }
-        }
-
-        @if entries.is_empty() {
-            p.muted { "no failures recorded." }
-        } @else {
-            (failure_rows(entries, false))
-            (pager(&format!("/dashboard/{}?tab=failures", guild.id), page, total_pages))
+            (failure_list(&base, active_code, code_counts, entries, false, page, total_pages))
         }
     }
 }
 
 fn danger_panel(guild: &DashGuild) -> Markup {
     html! {
-        p.muted {
-            "permanently delete everything genesis stores for this server: its services, blocked "
-            "domains, command settings, welcome message, and change history. this cannot be undone."
-        }
-        p.muted { "you'll be signed out once it's done." }
-        form method="post" action=(format!("/dashboard/{}/delete", guild.id))
-            onsubmit="return confirm('delete all stored data for this server? this cannot be undone.')" {
-            button.btn.danger type="submit" { "delete all data for this server" }
+        section.group {
+            (panel_intro(
+                "permanently delete everything genesis stores for this server: services, \
+                 blocked domains, command settings, welcome message, and change history. \
+                 you'll be signed out once it's done.",
+            ))
+            form method="post" action=(format!("/dashboard/{}/delete", guild.id))
+                onsubmit="return confirm('delete all stored data for this server? this cannot be undone.')" {
+                button.btn.danger type="submit" { "delete all data" }
+            }
         }
     }
 }
@@ -276,6 +323,8 @@ pub fn guild_config(
     audit_page: usize,
     audit_total_pages: usize,
     failures: &[FailureEntry],
+    failure_codes: &[(String, i64)],
+    failure_code: Option<&str>,
     failure_page: usize,
     failure_total_pages: usize,
     saved: bool,
@@ -292,7 +341,7 @@ pub fn guild_config(
         (tabs(&guild.id, tab))
 
         @if saved {
-            div.success-message role="status" { "settings saved." }
+            div.success-message role="status" { "saved." }
         }
 
         section.section style="border:none;padding:0" {
@@ -304,16 +353,18 @@ pub fn guild_config(
                 "failures" => (failures_panel(
                     guild,
                     settings,
-                    channels,
                     failures,
+                    failure_codes,
+                    failure_code,
                     failure_page,
                     failure_total_pages,
                 )),
                 "danger" => (danger_panel(guild)),
-                _ => (services_panel(guild, settings)),
+                _ => (services_panel(guild, settings, channels)),
             }
         }
         script src="/static/js/autosave.js" defer {}
+        script src="/static/js/group-toggles.js" defer {}
     };
-    layout(&guild.name, "dashboard", Some(user), body)
+    layout_wide(&guild.name, "dashboard", Some(user), body)
 }
