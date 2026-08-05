@@ -1,5 +1,6 @@
 use crate::constants::{
-    EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, FAILED_EMBED_REACTION,
+    EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, FAILED_EMBED_REACTION, FAILURE_DELETED,
+    FAILURE_FETCH, FAILURE_NOT_TEXT, FAILURE_OUT_OF_RANGE, FAILURE_TOO_LONG, FAILURE_UNAVAILABLE,
     HANDLED_MESSAGE_TTL_SECONDS, MAX_FAILURE_DETAIL_CHARS, MAX_HANDLED_MESSAGE_ENTRIES,
     MAX_RATE_LIMIT_ENTRIES, MAX_REPORT_DEDUP_ENTRIES, META_REPORT_CHANNEL, RATE_LIMIT_SECONDS,
     REPORT_DEDUP_SECONDS,
@@ -140,9 +141,62 @@ pub fn custom_host_matches(service: &str, host: &str) -> bool {
         .is_some_and(|domains| domains.iter().any(|d| host_under_domain(host, d)))
 }
 
-pub async fn react_failure(ctx: &serenity::Context, msg: &serenity::Message) {
+async fn react_failure(ctx: &serenity::Context, msg: &serenity::Message) {
     if let Err(e) = msg.react(&ctx.http, FAILED_EMBED_REACTION).await {
         debug!("Failed to add failure reaction: {}", e);
+    }
+}
+
+fn service_display(service: &str) -> &str {
+    match service {
+        "twitter" => "Twitter",
+        "instagram" => "Instagram",
+        "tiktok" => "TikTok",
+        "bsky" => "Bluesky",
+        "git_links" | "git_diffs" => "git",
+        other => other,
+    }
+}
+
+pub fn failure_reason(service: &str, code: &str) -> String {
+    let name = service_display(service);
+    match code {
+        FAILURE_FETCH => format!(
+            "Couldn't load that {name} link. It may be deleted, private, or {name} may be having issues."
+        ),
+        FAILURE_NOT_TEXT => format!(
+            "That {name} file looks like binary (a font, image, or similar), so there's nothing to show as a snippet."
+        ),
+        FAILURE_OUT_OF_RANGE => "Those line numbers are out of range for that file.".to_string(),
+        FAILURE_DELETED => format!("That {name} post was deleted or removed."),
+        FAILURE_UNAVAILABLE => format!(
+            "That {name} post is private, age-restricted, or from a protected account, so I can't load it."
+        ),
+        FAILURE_TOO_LONG => {
+            format!("That {name} result was too long to fit in a Discord message.")
+        }
+        _ => format!(
+            "Couldn't post that {name} embed here. It may be too large, or I may be missing permission to send messages or attachments in this channel."
+        ),
+    }
+}
+
+pub async fn notify_failure(
+    ctx: &serenity::Context,
+    msg: &serenity::Message,
+    service: &str,
+    code: &str,
+) {
+    let reply = serenity::CreateMessage::new()
+        .content(failure_reason(service, code))
+        .reference_message(msg)
+        .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
+    if let Err(e) = msg.channel_id.send_message(&ctx.http, reply).await {
+        debug!(
+            "Failed to send failure notice in channel {}: {}",
+            msg.channel_id, e
+        );
+        react_failure(ctx, msg).await;
     }
 }
 

@@ -1,7 +1,9 @@
 use super::file_pages;
-use super::git_handler::{FileResponse, GitFileLink};
+use super::git_handler::{FileResponse, GitError, GitFileLink};
 use super::shared::{self, SettingCheck};
-use crate::constants::{DISCORD_MESSAGE_LIMIT, FAILURE_FETCH, TRUNCATED_MESSAGE_LIMIT};
+use crate::constants::{
+    DISCORD_MESSAGE_LIMIT, FAILURE_FETCH, FAILURE_SEND, TRUNCATED_MESSAGE_LIMIT,
+};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::warn;
@@ -22,7 +24,7 @@ async fn send_code_snippet(
     ctx: &serenity::Context,
     msg: &serenity::Message,
     response: String,
-) -> bool {
+) -> Result<(), &'static str> {
     let footer = format!("\n-# Sent by <@{}>", msg.author.id);
     let max_body = DISCORD_MESSAGE_LIMIT - footer.len();
     let body = if response.len() <= max_body {
@@ -38,7 +40,11 @@ async fn send_code_snippet(
         .content(content)
         .reference_message(msg)
         .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
-    shared::send_reply(ctx, msg, "git_links", reply).await
+    if shared::send_reply(ctx, msg, "git_links", reply).await {
+        Ok(())
+    } else {
+        Err(FAILURE_SEND)
+    }
 }
 
 pub async fn handle_git_links(
@@ -73,36 +79,37 @@ pub async fn handle_git_links(
     }
 
     let mut any_sent = false;
-    let mut any_failed = false;
+    let mut failure: Option<&'static str> = None;
     for link in found_links {
         let fetch_link = link.clone();
         match shared::spawn_blocking_fetch(move || fetch_link.format_response()).await {
             Ok(Some(FileResponse::Single(response))) => {
-                if send_code_snippet(ctx, msg, response).await {
-                    any_sent = true;
-                } else {
-                    any_failed = true;
+                match send_code_snippet(ctx, msg, response).await {
+                    Ok(()) => any_sent = true,
+                    Err(code) => failure = Some(code),
                 }
             }
             Ok(Some(FileResponse::Paged(pages))) => {
-                if file_pages::send_paginated_file(ctx, msg, &link, pages).await {
-                    any_sent = true;
-                } else {
-                    any_failed = true;
+                match file_pages::send_paginated_file(ctx, msg, &link, pages).await {
+                    Ok(()) => any_sent = true,
+                    Err(code) => failure = Some(code),
                 }
             }
             Ok(None) => {}
             Err(e) => {
                 warn!("Failed to fetch git content: {}", e);
+                let code = e
+                    .downcast_ref::<GitError>()
+                    .map_or(FAILURE_FETCH, GitError::code);
                 shared::report_failure(
                     ctx,
                     msg.guild_id,
                     "git_links",
-                    FAILURE_FETCH,
+                    code,
                     Some(&link.original_url),
                     &e.to_string(),
                 );
-                any_failed = true;
+                failure = Some(code);
             }
         }
     }
@@ -110,7 +117,7 @@ pub async fn handle_git_links(
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
     }
-    if any_failed {
-        shared::react_failure(ctx, msg).await;
+    if let Some(code) = failure {
+        shared::notify_failure(ctx, msg, "git_links", code).await;
     }
 }

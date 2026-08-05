@@ -1,7 +1,7 @@
 use super::git_handler::{FileResponse, GitFileLink};
 use super::pagination;
 use super::shared;
-use crate::constants::{FILE_CACHE_MAX_ENTRIES, PAGE_CACHE_TTL_SECONDS};
+use crate::constants::{FAILURE_SEND, FILE_CACHE_MAX_ENTRIES, PAGE_CACHE_TTL_SECONDS};
 use poise::serenity_prelude as serenity;
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -109,9 +109,9 @@ pub async fn send_paginated_file(
     msg: &serenity::Message,
     link: &GitFileLink,
     pages: Vec<String>,
-) -> bool {
+) -> Result<(), &'static str> {
     if pages.is_empty() {
-        return false;
+        return Err(FAILURE_SEND);
     }
 
     let total_pages = pages.len();

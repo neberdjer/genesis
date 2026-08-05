@@ -1,6 +1,6 @@
 use super::shared::{self, SettingCheck};
-use super::twitter_handler::{self, TwitterPost};
-use crate::constants::{FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
+use super::twitter_handler::{self, TwitterError, TwitterPost};
+use crate::constants::{FAILURE_FETCH, FAILURE_SEND, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -123,7 +123,7 @@ pub async fn handle_twitter_links(
     }
 
     let mut any_sent = false;
-    let mut any_failed = false;
+    let mut failure: Option<&'static str> = None;
     for url in found_urls {
         debug!("Fetching tweet: url={}", url);
         let url_owned = url.clone();
@@ -140,20 +140,23 @@ pub async fn handle_twitter_links(
                 if shared::send_reply(ctx, msg, "twitter", message).await {
                     any_sent = true;
                 } else {
-                    any_failed = true;
+                    failure = Some(FAILURE_SEND);
                 }
             }
             Err(e) => {
                 warn!("Failed to fetch tweet {}: {}", url, e);
+                let code = e
+                    .downcast_ref::<TwitterError>()
+                    .map_or(FAILURE_FETCH, TwitterError::code);
                 shared::report_failure(
                     ctx,
                     msg.guild_id,
                     "twitter",
-                    FAILURE_FETCH,
+                    code,
                     Some(&url),
                     &e.to_string(),
                 );
-                any_failed = true;
+                failure = Some(code);
             }
         }
     }
@@ -161,7 +164,7 @@ pub async fn handle_twitter_links(
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
     }
-    if any_failed {
-        shared::react_failure(ctx, msg).await;
+    if let Some(code) = failure {
+        shared::notify_failure(ctx, msg, "twitter", code).await;
     }
 }

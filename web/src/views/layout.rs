@@ -66,6 +66,26 @@ const FAILURE_CODES: &[(&str, &str, &str)] = &[
         "too long",
         "the result didn't fit in a discord message",
     ),
+    (
+        "not_text",
+        "not text",
+        "the file isn't text (binary, e.g. a font or image), so there was nothing to show",
+    ),
+    (
+        "out_of_range",
+        "out of range",
+        "the requested line numbers were outside the file",
+    ),
+    (
+        "deleted",
+        "deleted",
+        "the post was deleted or removed at the source",
+    ),
+    (
+        "unavailable",
+        "unavailable",
+        "the post is private, age-restricted, or from a protected account",
+    ),
 ];
 
 fn failure_meta(code: &str) -> (&'static str, Cow<'_, str>, Cow<'_, str>) {

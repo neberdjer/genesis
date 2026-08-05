@@ -1,5 +1,7 @@
 use super::shared::is_safe_host;
-use crate::constants::{MAX_FILE_CHARS, MAX_FILE_FETCH_BYTES, SPACES_PER_TAB};
+use crate::constants::{
+    FAILURE_NOT_TEXT, FAILURE_OUT_OF_RANGE, MAX_FILE_CHARS, MAX_FILE_FETCH_BYTES, SPACES_PER_TAB,
+};
 use regex::Regex;
 use std::sync::OnceLock;
 
@@ -7,6 +9,32 @@ pub enum FileResponse {
     Single(String),
     Paged(Vec<String>),
 }
+
+#[derive(Debug)]
+pub enum GitError {
+    NotText,
+    OutOfRange,
+}
+
+impl GitError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            GitError::NotText => FAILURE_NOT_TEXT,
+            GitError::OutOfRange => FAILURE_OUT_OF_RANGE,
+        }
+    }
+}
+
+impl std::fmt::Display for GitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GitError::NotText => write!(f, "file is not valid UTF-8 text"),
+            GitError::OutOfRange => write!(f, "requested lines are out of range"),
+        }
+    }
+}
+
+impl std::error::Error for GitError {}
 
 static GITHUB_PATTERN: OnceLock<Regex> = OnceLock::new();
 static GITLAB_PATTERN: OnceLock<Regex> = OnceLock::new();
@@ -194,9 +222,9 @@ impl GitFileLink {
                 let valid = e.utf8_error().valid_up_to();
                 let mut bytes = e.into_bytes();
                 bytes.truncate(valid);
-                String::from_utf8(bytes)?
+                String::from_utf8(bytes).map_err(|_| GitError::NotText)?
             }
-            Err(e) => return Err(e.into()),
+            Err(_) => return Err(GitError::NotText.into()),
         };
 
         if self.platform == GitPlatform::RustDoc {
@@ -335,9 +363,7 @@ impl GitFileLink {
         };
 
         if self.start_line.is_some() {
-            let extracted = self
-                .extract_lines(&content)
-                .ok_or("Requested lines are out of range")?;
+            let extracted = self.extract_lines(&content).ok_or(GitError::OutOfRange)?;
             return Ok(Some(FileResponse::Single(self.format_snippet(&extracted))));
         }
 

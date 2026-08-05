@@ -5,7 +5,7 @@ use crate::constants::{
 use crate::handlers::file_pages;
 use crate::handlers::git_diff_handler::CommitDiff;
 use crate::handlers::git_diffs;
-use crate::handlers::git_handler::{FileResponse, GitFileLink};
+use crate::handlers::git_handler::{FileResponse, GitError, GitFileLink};
 use crate::handlers::shared;
 use crate::{Context, Error, db};
 use poise::CreateReply;
@@ -73,15 +73,18 @@ async fn send_file(ctx: Context<'_>, link: GitFileLink, only_me: bool) -> Result
         }
         Err(e) => {
             tracing::warn!("Failed to fetch git file via slash command: {}", e);
+            let code = e
+                .downcast_ref::<GitError>()
+                .map_or(FAILURE_FETCH, GitError::code);
             shared::report_failure(
                 ctx.serenity_context(),
                 ctx.guild_id(),
                 "git_links",
-                FAILURE_FETCH,
+                code,
                 Some(&link.original_url),
                 &e.to_string(),
             );
-            return deny(ctx, "Failed to fetch that file.").await;
+            return deny(ctx, &shared::failure_reason("git_links", code)).await;
         }
     };
 

@@ -3,7 +3,7 @@ use crate::handlers::bsky_handler::BskyPost;
 use crate::handlers::instagram_handler::InstagramPost;
 use crate::handlers::shared;
 use crate::handlers::tiktok_handler::TikTokPost;
-use crate::handlers::twitter_handler::TwitterPost;
+use crate::handlers::twitter_handler::{TwitterError, TwitterPost};
 use crate::handlers::{bsky, instagram, tiktok, twitter};
 use crate::{Context, Error};
 use poise::CreateReply;
@@ -44,13 +44,11 @@ pub async fn instagram(
                 Some(&url),
                 &e.to_string(),
             );
-            ctx.send(
-                CreateReply::default()
-                    .content("Failed to fetch the Instagram post.")
-                    .ephemeral(true),
+            return deny(
+                ctx,
+                &shared::failure_reason("instagram", crate::constants::FAILURE_FETCH),
             )
-            .await?;
-            return Ok(());
+            .await;
         }
     };
 
@@ -94,21 +92,18 @@ pub async fn twitter(
         Ok(post) => post,
         Err(e) => {
             tracing::warn!("Failed to fetch tweet via slash command: {}", e);
+            let code = e
+                .downcast_ref::<TwitterError>()
+                .map_or(crate::constants::FAILURE_FETCH, TwitterError::code);
             shared::report_failure(
                 ctx.serenity_context(),
                 ctx.guild_id(),
                 "twitter",
-                crate::constants::FAILURE_FETCH,
+                code,
                 Some(&url),
                 &e.to_string(),
             );
-            ctx.send(
-                CreateReply::default()
-                    .content("Failed to fetch the tweet.")
-                    .ephemeral(true),
-            )
-            .await?;
-            return Ok(());
+            return deny(ctx, &shared::failure_reason("twitter", code)).await;
         }
     };
 
@@ -160,13 +155,11 @@ pub async fn bsky(
                 Some(&url),
                 &e.to_string(),
             );
-            ctx.send(
-                CreateReply::default()
-                    .content("Failed to fetch the Bluesky post.")
-                    .ephemeral(true),
+            return deny(
+                ctx,
+                &shared::failure_reason("bsky", crate::constants::FAILURE_FETCH),
             )
-            .await?;
-            return Ok(());
+            .await;
         }
     };
 
@@ -218,13 +211,11 @@ pub async fn tiktok(
                 Some(&url),
                 &e.to_string(),
             );
-            ctx.send(
-                CreateReply::default()
-                    .content("Failed to fetch the TikTok post.")
-                    .ephemeral(true),
+            return deny(
+                ctx,
+                &shared::failure_reason("tiktok", crate::constants::FAILURE_FETCH),
             )
-            .await?;
-            return Ok(());
+            .await;
         }
     };
 

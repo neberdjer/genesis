@@ -1,7 +1,7 @@
 use super::instagram_handler::InstagramPost;
 use super::shared::{self, SettingCheck};
 use crate::constants::{
-    FAILURE_FETCH, INSTAGRAM_ACCENT_COLOR, INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA,
+    FAILURE_FETCH, FAILURE_SEND, INSTAGRAM_ACCENT_COLOR, INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA,
     INSTAGRAM_MIRRORS,
 };
 use poise::serenity_prelude as serenity;
@@ -121,7 +121,7 @@ pub async fn handle_instagram_links(
     }
 
     let mut any_sent = false;
-    let mut any_failed = false;
+    let mut failure: Option<&'static str> = None;
     for url in found_urls {
         debug!("Fetching Instagram post: url={}", url);
         let url_owned = url.clone();
@@ -138,7 +138,7 @@ pub async fn handle_instagram_links(
                 if shared::send_reply(ctx, msg, "instagram", message).await {
                     any_sent = true;
                 } else {
-                    any_failed = true;
+                    failure = Some(FAILURE_SEND);
                 }
             }
             Err(e) => {
@@ -151,7 +151,7 @@ pub async fn handle_instagram_links(
                     Some(&url),
                     &e.to_string(),
                 );
-                any_failed = true;
+                failure = Some(FAILURE_FETCH);
             }
         }
     }
@@ -159,7 +159,7 @@ pub async fn handle_instagram_links(
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
     }
-    if any_failed {
-        shared::react_failure(ctx, msg).await;
+    if let Some(code) = failure {
+        shared::notify_failure(ctx, msg, "instagram", code).await;
     }
 }

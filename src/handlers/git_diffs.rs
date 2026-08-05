@@ -2,7 +2,7 @@ use super::git_diff_handler::CommitDiff;
 use super::pagination;
 use super::shared::{self, SettingCheck};
 use crate::constants::{
-    DIFF_CACHE_MAX_ENTRIES, FAILURE_FETCH, FILES_PER_PAGE, PAGE_CACHE_TTL_SECONDS,
+    DIFF_CACHE_MAX_ENTRIES, FAILURE_FETCH, FAILURE_SEND, FILES_PER_PAGE, PAGE_CACHE_TTL_SECONDS,
 };
 use crate::db;
 use poise::serenity_prelude as serenity;
@@ -169,9 +169,9 @@ async fn send_paginated_diff(
     msg: &serenity::Message,
     commit: &CommitDiff,
     responses: Vec<String>,
-) -> bool {
+) -> Result<(), &'static str> {
     if responses.is_empty() {
-        return false;
+        return Err(FAILURE_SEND);
     }
 
     let total_pages = responses.len();
@@ -299,7 +299,7 @@ async fn handle_commit_diffs_impl(
     }
 
     let mut any_sent = false;
-    let mut any_failed = false;
+    let mut failure: Option<&'static str> = None;
     for commit in found_commits {
         let chunked = match fetch_or_cached(&commit).await {
             Ok(chunked) => chunked,
@@ -313,23 +313,22 @@ async fn handle_commit_diffs_impl(
                     None,
                     &format!("{}/{}@{}: {}", commit.owner, commit.repo, commit.commit, e),
                 );
-                any_failed = true;
+                failure = Some(FAILURE_FETCH);
                 continue;
             }
         };
 
-        if send_paginated_diff(ctx, msg, &commit, chunked).await {
-            any_sent = true;
-        } else {
-            any_failed = true;
+        match send_paginated_diff(ctx, msg, &commit, chunked).await {
+            Ok(()) => any_sent = true,
+            Err(code) => failure = Some(code),
         }
     }
 
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
     }
-    if any_failed {
-        shared::react_failure(ctx, msg).await;
+    if let Some(code) = failure {
+        shared::notify_failure(ctx, msg, "git_diffs", code).await;
     }
 }
 

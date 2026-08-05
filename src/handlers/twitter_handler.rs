@@ -1,4 +1,6 @@
-use crate::constants::{TWITTER_DESKTOP_UA, TWITTER_HOSTS, TWITTER_SYNDICATION_UA};
+use crate::constants::{
+    FAILURE_DELETED, FAILURE_UNAVAILABLE, TWITTER_DESKTOP_UA, TWITTER_HOSTS, TWITTER_SYNDICATION_UA,
+};
 use regex::Regex;
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -6,6 +8,32 @@ use std::time::Duration;
 use tracing::debug;
 
 static TWITTER_PATTERN: OnceLock<Regex> = OnceLock::new();
+
+#[derive(Debug)]
+pub enum TwitterError {
+    Deleted,
+    Unavailable,
+}
+
+impl TwitterError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            TwitterError::Deleted => FAILURE_DELETED,
+            TwitterError::Unavailable => FAILURE_UNAVAILABLE,
+        }
+    }
+}
+
+impl std::fmt::Display for TwitterError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TwitterError::Deleted => write!(f, "tweet has been deleted or removed"),
+            TwitterError::Unavailable => write!(f, "tweet is unavailable (private or restricted)"),
+        }
+    }
+}
+
+impl std::error::Error for TwitterError {}
 
 pub(crate) fn matches_twitter_host(url: &str) -> bool {
     super::shared::matches_host(url, TWITTER_HOSTS, "twitter")
@@ -68,16 +96,16 @@ impl TwitterPost {
                             .unwrap_or("");
 
                         if typename == "TweetTombstone" {
-                            return Err("Tweet has been deleted or removed".into());
+                            return Err(TwitterError::Deleted.into());
+                        }
+
+                        if typename == "TweetUnavailable" {
+                            return Err(TwitterError::Unavailable.into());
                         }
 
                         let is_empty = json.as_object().is_some_and(|obj| obj.is_empty());
-                        if is_empty || typename == "TweetUnavailable" {
-                            last_err = if typename.is_empty() {
-                                "Empty syndication response".to_string()
-                            } else {
-                                format!("Tweet unavailable (typename={})", typename)
-                            };
+                        if is_empty {
+                            last_err = "Empty syndication response".to_string();
                         } else {
                             return Self::parse_tweet(&json);
                         }

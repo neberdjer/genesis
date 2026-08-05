@@ -1,6 +1,6 @@
 use super::shared::{self, SettingCheck};
 use super::tiktok_handler::TikTokPost;
-use crate::constants::{FAILURE_FETCH, TIKTOK_ACCENT_COLOR, TIKTOK_DOWNLOAD_UA};
+use crate::constants::{FAILURE_FETCH, FAILURE_SEND, TIKTOK_ACCENT_COLOR, TIKTOK_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -102,7 +102,7 @@ pub async fn handle_tiktok_links(
     }
 
     let mut any_sent = false;
-    let mut any_failed = false;
+    let mut failure: Option<&'static str> = None;
     for video in found_videos {
         let video_url = video.normalized;
         debug!("Fetching TikTok: url={}", video_url);
@@ -120,7 +120,7 @@ pub async fn handle_tiktok_links(
                 if shared::send_reply(ctx, msg, "tiktok", message).await {
                     any_sent = true;
                 } else {
-                    any_failed = true;
+                    failure = Some(FAILURE_SEND);
                 }
             }
             Err(e) => {
@@ -133,7 +133,7 @@ pub async fn handle_tiktok_links(
                     Some(&video_url),
                     &e.to_string(),
                 );
-                any_failed = true;
+                failure = Some(FAILURE_FETCH);
             }
         }
     }
@@ -141,7 +141,7 @@ pub async fn handle_tiktok_links(
     if any_sent {
         shared::suppress_embeds(ctx, msg).await;
     }
-    if any_failed {
-        shared::react_failure(ctx, msg).await;
+    if let Some(code) = failure {
+        shared::notify_failure(ctx, msg, "tiktok", code).await;
     }
 }

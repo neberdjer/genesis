@@ -1,5 +1,7 @@
 use super::shared;
-use crate::constants::{DISCORD_MESSAGE_LIMIT, FAILURE_TOO_LONG, PAGE_CACHE_TTL_SECONDS};
+use crate::constants::{
+    DISCORD_MESSAGE_LIMIT, FAILURE_SEND, FAILURE_TOO_LONG, PAGE_CACHE_TTL_SECONDS,
+};
 use poise::serenity_prelude as serenity;
 use std::time::Instant;
 use tracing::{error, warn};
@@ -48,7 +50,7 @@ pub async fn send_first_page(
     service: &'static str,
     first_page: &str,
     buttons: Option<serenity::CreateActionRow<'_>>,
-) -> bool {
+) -> Result<(), &'static str> {
     let footer = format!("\n-# Sent by <@{}>", msg.author.id);
     if first_page.len() + footer.len() > DISCORD_MESSAGE_LIMIT {
         warn!("Paged response too long, skipping");
@@ -60,7 +62,7 @@ pub async fn send_first_page(
             None,
             "first page exceeds the message limit",
         );
-        return false;
+        return Err(FAILURE_TOO_LONG);
     }
 
     let content = format!("{}{}", first_page, footer);
@@ -74,7 +76,11 @@ pub async fn send_first_page(
             message_builder.components(vec![serenity::CreateComponent::ActionRow(buttons)]);
     }
 
-    shared::send_reply(ctx, msg, service, message_builder).await
+    if shared::send_reply(ctx, msg, service, message_builder).await {
+        Ok(())
+    } else {
+        Err(FAILURE_SEND)
+    }
 }
 
 pub async fn respond_ephemeral(
