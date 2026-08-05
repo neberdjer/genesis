@@ -2,6 +2,7 @@ pub mod general;
 pub mod git;
 pub mod media;
 pub mod moderation;
+pub mod optout;
 pub mod remind;
 pub mod settings;
 pub mod timezone;
@@ -30,6 +31,8 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
         timezone::timezone(),
         settings::settings(),
         welcome::welcome(),
+        optout::optout(),
+        optout::optin(),
     ];
     commands.extend(moderation::commands());
     commands.extend(utility::commands());

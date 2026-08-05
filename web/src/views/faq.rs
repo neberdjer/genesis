@@ -83,6 +83,20 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                 }
             }
             details.faq-item {
+                summary.faq-q { "can i stop genesis from touching my messages?" }
+                div.faq-a {
+                    p {
+                        "yes. run " code { "/optout" } " and genesis will skip your messages everywhere "
+                        "it's used: it won't auto-embed your links or reply to you. run "
+                        code { "/optin" } " to turn it back on."
+                    }
+                    p {
+                        "slash commands you run yourself still work while opted out, so you stay in "
+                        "control of what gets posted."
+                    }
+                }
+            }
+            details.faq-item {
                 summary.faq-q { "what are the timezone tools?" }
                 div.faq-a {
                     p {
@@ -146,8 +160,8 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                 div.faq-a {
                     p {
                         "your server's settings (which services are enabled, any domains you block), any "
-                        "reminders you've set until they fire, and a 30-day record of links that failed "
-                        "to embed."
+                        "reminders you've set until they fire, a 30-day record of links that failed "
+                        "to embed, and your user id if you " code { "/optout" } "."
                     }
                     p {
                         "it does not store message content or any media; embeds are built on demand. see "

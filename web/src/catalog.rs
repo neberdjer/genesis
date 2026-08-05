@@ -217,6 +217,14 @@ pub const COMMAND_GROUPS: &[Group] = &[
                 usage: "/stats",
                 desc: "show servers, users, uptime, and version",
             },
+            Command {
+                usage: "/optout",
+                desc: "stop genesis from auto-embedding links in your messages",
+            },
+            Command {
+                usage: "/optin",
+                desc: "let genesis process your messages again",
+            },
         ],
     },
     Group {

@@ -1,7 +1,7 @@
 use crate::discord::User;
+use maud::{DOCTYPE, Markup, PreEscaped, html};
 use std::borrow::Cow;
 use std::collections::HashSet;
-use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 const THEME_INIT: &str = r#"(function(){var m=null;try{m=localStorage.getItem("theme")}catch(_){}if(m!=="light"&&m!=="dark")m="system";var t=m==="system"?(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):m;var r=document.documentElement;r.setAttribute("data-theme",t);r.setAttribute("data-theme-mode",m);})();"#;
 

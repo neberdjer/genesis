@@ -19,7 +19,7 @@ pub async fn handle_bot_mention(
         return;
     }
 
-    if !shared::pre_check_user(msg.author.id, pool).await {
+    if !shared::can_auto_process_user(msg.author.id, pool).await {
         return;
     }
 

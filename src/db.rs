@@ -795,3 +795,31 @@ pub async fn record_failure(
         warn!("Failed to record embed failure: {}", e);
     }
 }
+
+pub async fn is_user_opted_out(pool: &PgPool, user_id: &str) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM user_optout WHERE user_id = $1)")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+}
+
+pub async fn set_user_opted_out(
+    pool: &PgPool,
+    user_id: &str,
+    opted_out: bool,
+) -> Result<(), sqlx::Error> {
+    if opted_out {
+        sqlx::query(
+            "INSERT INTO user_optout (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING",
+        )
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query("DELETE FROM user_optout WHERE user_id = $1")
+            .bind(user_id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}

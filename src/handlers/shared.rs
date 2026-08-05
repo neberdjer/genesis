@@ -508,6 +508,25 @@ pub async fn pre_check_user(user_id: serenity::UserId, pool: Option<&PgPool>) ->
     }
 }
 
+pub async fn can_auto_process_user(user_id: serenity::UserId, pool: Option<&PgPool>) -> bool {
+    if !pre_check_user(user_id, pool).await {
+        return false;
+    }
+
+    let Some(pool) = pool else {
+        return true;
+    };
+
+    match db::is_user_opted_out(pool, &user_id.to_string()).await {
+        Ok(true) => false,
+        Err(e) => {
+            warn!("Failed to check user opt-out: {}", e);
+            true
+        }
+        _ => true,
+    }
+}
+
 pub async fn pre_check(
     msg: &serenity::Message,
     pool: Option<&PgPool>,
@@ -517,15 +536,13 @@ pub async fn pre_check(
         return false;
     }
 
+    if !can_auto_process_user(msg.author.id, pool).await {
+        return false;
+    }
+
     let Some(pool) = pool else {
         return true;
     };
-
-    match db::is_user_blacklisted(pool, &msg.author.id.to_string()).await {
-        Ok(true) => return false,
-        Err(e) => warn!("Failed to check user blacklist: {}", e),
-        _ => {}
-    }
 
     if let Some(guild_id) = msg.guild_id {
         match db::is_server_blacklisted(pool, &guild_id.to_string()).await {

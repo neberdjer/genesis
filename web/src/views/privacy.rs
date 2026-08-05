@@ -25,6 +25,11 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
                 "to a database or a log."
             }
             p {
+                "you can turn this off for yourself with " code { "/optout" } ": genesis will then skip your "
+                "messages entirely and stop auto-embedding your links. slash commands you run yourself "
+                "still work, and " code { "/optin" } " reverses it."
+            }
+            p {
                 "if a server turns on reply cleanup, genesis also reads that server's audit log when a "
                 "message it replied to is deleted, only to check whether a moderator rather than the "
                 "original author removed it. this is read on demand and not stored."
@@ -43,11 +48,12 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
                 li { "blacklisted user and server ids, with an optional reason" }
                 li { "reminders you set: your user id, the channel to ping you in, when to fire, and the reminder text you typed. a reminder is deleted as soon as it fires (snoozing reschedules it)" }
                 li { "failed embeds: details of links that failed to embed, kept for up to 30 days so failures can be diagnosed (see failure reports below)" }
+                li { "opt-outs: if you run " code { "/optout" } ", we store your user id so genesis knows to leave your messages alone; it's removed when you run " code { "/optin" } }
             }
             p {
                 "when a setting is changed, we also store the discord id of whoever changed it, so it "
                 "can be audited. beyond that, the personal ids we keep are yours on reminders you've "
-                "set, and any blacklisted user ids."
+                "set, an opt-out you've chosen, and any blacklisted user ids."
             }
 
             h2.faq-section { "usage stats" }

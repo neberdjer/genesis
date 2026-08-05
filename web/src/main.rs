@@ -930,7 +930,14 @@ async fn guild_domain(
         match result {
             Ok(()) => {
                 let verb = if block { "blocked" } else { "unblocked" };
-                audit(&state, &guild_id, &session, "domains", &format!("{verb} {d}")).await;
+                audit(
+                    &state,
+                    &guild_id,
+                    &session,
+                    "domains",
+                    &format!("{verb} {d}"),
+                )
+                .await;
             }
             Err(e) => error!("blocked-domain update failed for {}: {}", d, e),
         }
