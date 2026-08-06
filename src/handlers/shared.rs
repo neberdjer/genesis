@@ -268,6 +268,13 @@ async fn send_report(ctx: &serenity::Context, channel: &str, content: &str) {
     }
 }
 
+pub async fn report_global(ctx: &serenity::Context, content: &str) {
+    let data = ctx.data::<crate::Data>();
+    if let Ok(Some(channel)) = db::get_meta(&data.pool, META_REPORT_CHANNEL).await {
+        send_report(ctx, &channel, content).await;
+    }
+}
+
 pub fn report_failure(
     ctx: &serenity::Context,
     guild_id: Option<serenity::GuildId>,

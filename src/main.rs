@@ -5,7 +5,8 @@ mod handlers;
 
 use constants::{
     DEFAULT_ENVIRONMENT, DEFAULT_ONLINE_STATUS, DEFAULT_PREFIX, DEFAULT_STATUS_TEXT,
-    DEFAULT_STATUS_TYPE, MEDIA_HOSTS_POLL_SECONDS, STATUS_POLL_SECONDS, TOGGLEABLE_COMMANDS,
+    DEFAULT_STATUS_TYPE, INSTAGRAM_DOC_ID_POLL_SECONDS, MEDIA_HOSTS_POLL_SECONDS,
+    STATUS_POLL_SECONDS, TOGGLEABLE_COMMANDS,
 };
 use handlers::{
     handle_bot_mention, handle_bsky_links, handle_commit_diffs, handle_diff_pagination,
@@ -80,6 +81,7 @@ impl serenity::EventHandler for Handler {
                 if !POLLER_STARTED.swap(true, Ordering::SeqCst) {
                     tokio::spawn(status_poller(ctx.clone()));
                     tokio::spawn(custom_hosts_poller(ctx.clone()));
+                    tokio::spawn(instagram_health_poller(ctx.clone()));
                     tokio::spawn(handlers::reminders::reminder_poller(ctx.clone()));
                     tokio::spawn(register_commands_on_update(ctx.clone()));
                 }
@@ -118,6 +120,26 @@ async fn custom_hosts_poller(ctx: serenity::Context) {
     loop {
         interval.tick().await;
         handlers::shared::refresh_custom_media_hosts(&data.pool).await;
+    }
+}
+
+async fn instagram_health_poller(ctx: serenity::Context) {
+    let mut interval = tokio::time::interval(Duration::from_secs(INSTAGRAM_DOC_ID_POLL_SECONDS));
+    loop {
+        interval.tick().await;
+        let alive =
+            tokio::task::spawn_blocking(handlers::instagram_handler::InstagramPost::doc_id_alive)
+                .await
+                .unwrap_or(true);
+        if !alive {
+            handlers::shared::report_global(
+                &ctx,
+                "**instagram** the web_info doc_id looks dead (GraphQL returned `execution error`). \
+                 Update `INSTAGRAM_WEB_INFO_DOC_ID` from instaloader master (structures.py, the \
+                 `xdt_api__v1__media__shortcode__web_info` query).",
+            )
+            .await;
+        }
     }
 }
 

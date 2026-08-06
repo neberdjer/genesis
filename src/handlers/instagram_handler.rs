@@ -1,6 +1,7 @@
 use crate::constants::{
-    INSTAGRAM_APP_ID, INSTAGRAM_DESKTOP_UA, INSTAGRAM_DOC_IDS, INSTAGRAM_EMBED_UA, INSTAGRAM_HOSTS,
-    INSTAGRAM_MAX_CAROUSEL_SLIDES, INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS, INSTAGRAM_MOBILE_UA,
+    INSTAGRAM_APP_ID, INSTAGRAM_DESKTOP_UA, INSTAGRAM_DOC_IDS, INSTAGRAM_EMBED_UA,
+    INSTAGRAM_HEALTH_SHORTCODE, INSTAGRAM_HOSTS, INSTAGRAM_MAX_CAROUSEL_SLIDES,
+    INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS, INSTAGRAM_MOBILE_UA, INSTAGRAM_WEB_INFO_DOC_ID,
 };
 use regex::Regex;
 use serde_json::Value;
@@ -53,6 +54,11 @@ impl InstagramPost {
     }
 
     fn fetch_by_id(post_id: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        if let Some(post) = Self::fetch_web_info(post_id) {
+            return Ok(Self::finalize(post));
+        }
+        debug!("web_info failed for {}, trying embed captioned", post_id);
+
         if let Some(post) = Self::fetch_embed_captioned(post_id) {
             return Ok(Self::finalize(post));
         }
@@ -265,6 +271,65 @@ impl InstagramPost {
             bloks_version,
             cookie,
         })
+    }
+
+    fn web_info_raw(post_id: &str) -> Option<String> {
+        let tokens = Self::harvest_tokens(post_id)?;
+
+        let variables = serde_json::json!({
+            "shortcode": post_id,
+            "__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider": false,
+        })
+        .to_string();
+        let body_pairs: Vec<(&str, &str)> = vec![
+            ("lsd", &tokens.lsd),
+            ("doc_id", INSTAGRAM_WEB_INFO_DOC_ID),
+            ("variables", &variables),
+            ("server_timestamps", "true"),
+        ];
+        let body = body_pairs
+            .iter()
+            .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        let mut req = ureq::post("https://www.instagram.com/graphql/query")
+            .set("User-Agent", INSTAGRAM_DESKTOP_UA)
+            .set("Accept", "*/*")
+            .set("Content-Type", "application/x-www-form-urlencoded")
+            .set("Origin", "https://www.instagram.com")
+            .set(
+                "Referer",
+                &format!("https://www.instagram.com/p/{}/", post_id),
+            )
+            .set("X-Ig-App-Id", INSTAGRAM_APP_ID)
+            .set("X-FB-LSD", &tokens.lsd)
+            .set("Cookie", &tokens.cookie);
+
+        if !tokens.csrf.is_empty() {
+            req = req.set("X-CSRFToken", &tokens.csrf);
+        }
+
+        req.timeout(Duration::from_secs(15))
+            .send_string(&body)
+            .ok()?
+            .into_string()
+            .ok()
+    }
+
+    fn fetch_web_info(post_id: &str) -> Option<Self> {
+        let json: Value = serde_json::from_str(&Self::web_info_raw(post_id)?).ok()?;
+        let item = json
+            .get("data")?
+            .get("xdt_api__v1__media__shortcode__web_info")?
+            .get("items")?
+            .get(0)?;
+        Self::parse_mobile_response(item).ok()
+    }
+
+    pub fn doc_id_alive() -> bool {
+        Self::web_info_raw(INSTAGRAM_HEALTH_SHORTCODE)
+            .is_none_or(|body| !body.contains("execution error"))
     }
 
     fn fetch_graphql_authed(post_id: &str) -> Option<Self> {
@@ -584,12 +649,13 @@ impl InstagramPost {
             .get("product_type")
             .and_then(|t| t.as_str())
             .unwrap_or("");
-        let has_carousel = item.get("carousel_media").is_some();
-        let is_carousel = product_type == "carousel_container" || has_carousel;
+        let media_type = item.get("media_type").and_then(|m| m.as_i64());
+        let is_carousel = media_type == Some(8) || product_type == "carousel_container";
 
         let mut media = Vec::new();
 
-        if let Some(carousel) = item.get("carousel_media").and_then(|c| c.as_array()) {
+        if is_carousel && let Some(carousel) = item.get("carousel_media").and_then(|c| c.as_array())
+        {
             for child in carousel {
                 match Self::media_url_for_node(child)? {
                     Some(url) => media.push(url),

@@ -15,6 +15,8 @@ pub const DEFAULT_PREFIX: &str = "!";
 pub const DEFAULT_ENVIRONMENT: &str = "prod";
 pub const STATUS_POLL_SECONDS: u64 = 20;
 pub const MEDIA_HOSTS_POLL_SECONDS: u64 = 60;
+pub const INSTAGRAM_DOC_ID_POLL_SECONDS: u64 = 21_600;
+pub const INSTAGRAM_HEALTH_SHORTCODE: &str = "Dbqyg11kVWo";
 pub const REPLY_WATCH_SECONDS: u64 = 60;
 pub const FAILED_EMBED_REACTION: char = '❌';
 pub const DEFAULT_STATUS_TYPE: &str = "watching";
@@ -37,6 +39,7 @@ pub const INSTAGRAM_EMBED_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 li
 pub const INSTAGRAM_MIRROR_UA: &str = "TelegramBot (like TwitterBot)";
 pub const INSTAGRAM_APP_ID: &str = "936619743392459";
 pub const INSTAGRAM_DOC_IDS: &[&str] = &["8845758582119845", "25981206651899035"];
+pub const INSTAGRAM_WEB_INFO_DOC_ID: &str = "27128499623469141";
 pub const INSTAGRAM_MIRRORS: &[&str] = &[
     "kkinstagram.com",
     "vxinstagram.com",
