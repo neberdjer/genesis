@@ -225,6 +225,14 @@ pub const COMMAND_GROUPS: &[Group] = &[
                 usage: "/optin",
                 desc: "let genesis process your messages again",
             },
+            Command {
+                usage: "/delete [message]",
+                desc: "delete a genesis embed: your most recent one here, or one you name by id or link",
+            },
+            Command {
+                usage: "Delete embed",
+                desc: "right-click a genesis embed, Apps, Delete embed (poster or anyone who can manage messages)",
+            },
         ],
     },
     Group {

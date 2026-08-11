@@ -1,3 +1,4 @@
+pub mod delete_embed;
 pub mod general;
 pub mod git;
 pub mod media;
@@ -33,6 +34,8 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
         welcome::welcome(),
         optout::optout(),
         optout::optin(),
+        delete_embed::delete_embed(),
+        delete_embed::delete(),
     ];
     commands.extend(moderation::commands());
     commands.extend(utility::commands());

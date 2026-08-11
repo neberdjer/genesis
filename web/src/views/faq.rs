@@ -97,6 +97,21 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                 }
             }
             details.faq-item {
+                summary.faq-q { "how do i remove an embed genesis posted?" }
+                div.faq-a {
+                    p {
+                        "right-click the embed, open " strong { "Apps" } ", and pick "
+                        strong { "Delete embed" } ". or run " code { "/delete" } " to remove your most "
+                        "recent embed in the channel, or name a specific one by message id or link "
+                        "with " code { "/delete message:<id>" } "."
+                    }
+                    p {
+                        "you can remove embeds for links you posted; anyone who can manage messages "
+                        "can remove any of them."
+                    }
+                }
+            }
+            details.faq-item {
                 summary.faq-q { "what are the timezone tools?" }
                 div.faq-a {
                     p {
