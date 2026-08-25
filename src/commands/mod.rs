@@ -27,6 +27,7 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
         media::twitter(),
         media::bsky(),
         media::tiktok(),
+        media::streamable(),
         git::git(),
         remind::reminder(),
         timezone::timezone(),

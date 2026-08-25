@@ -10,6 +10,7 @@ pub const SERVICES: &[(&str, &str)] = &[
     ("tiktok", "TikTok embeds"),
     ("instagram", "Instagram embeds"),
     ("bsky", "Bluesky embeds"),
+    ("streamable", "Streamable embeds"),
 ];
 
 pub const DEFAULT_WELCOME: &str = "Welcome to {server_name}, {user}";
@@ -23,6 +24,7 @@ pub struct Settings {
     pub tiktok: bool,
     pub instagram: bool,
     pub bsky: bool,
+    pub streamable: bool,
     pub reply_cleanup: bool,
     pub welcome_enabled: bool,
     pub welcome_channel_id: Option<String>,
@@ -41,6 +43,7 @@ impl Settings {
             tiktok: true,
             instagram: true,
             bsky: true,
+            streamable: true,
             reply_cleanup: false,
             welcome_enabled: false,
             welcome_channel_id: None,
@@ -61,6 +64,7 @@ impl Settings {
             "tiktok" => self.tiktok,
             "instagram" => self.instagram,
             "bsky" => self.bsky,
+            "streamable" => self.streamable,
             _ => false,
         }
     }
@@ -79,7 +83,7 @@ pub async fn get_settings(pool: &Pool, guild_id: &str) -> Result<Settings, sqlx:
     let row = sqlx::query(
         r#"
         SELECT git_diffs_enabled, git_compares_enabled, git_links_enabled,
-               twitter_enabled, tiktok_enabled, instagram_enabled, bsky_enabled, reply_cleanup_enabled,
+               twitter_enabled, tiktok_enabled, instagram_enabled, bsky_enabled, streamable_enabled, reply_cleanup_enabled,
                welcome_enabled, welcome_channel_id, welcome_message, welcome_role_id,
                report_channel_id
         FROM server_settings
@@ -99,6 +103,7 @@ pub async fn get_settings(pool: &Pool, guild_id: &str) -> Result<Settings, sqlx:
             tiktok: r.try_get("tiktok_enabled")?,
             instagram: r.try_get("instagram_enabled")?,
             bsky: r.try_get("bsky_enabled")?,
+            streamable: r.try_get("streamable_enabled")?,
             reply_cleanup: r.try_get("reply_cleanup_enabled")?,
             welcome_enabled: r.try_get("welcome_enabled")?,
             welcome_channel_id: r.try_get("welcome_channel_id")?,
@@ -152,8 +157,8 @@ pub async fn set_settings(
         r#"
         INSERT INTO server_settings
             (guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled,
-             twitter_enabled, tiktok_enabled, instagram_enabled, bsky_enabled, reply_cleanup_enabled)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             twitter_enabled, tiktok_enabled, instagram_enabled, bsky_enabled, reply_cleanup_enabled, streamable_enabled)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (guild_id) DO UPDATE SET
             git_diffs_enabled = $2,
             git_compares_enabled = $3,
@@ -163,6 +168,7 @@ pub async fn set_settings(
             instagram_enabled = $7,
             bsky_enabled = $8,
             reply_cleanup_enabled = $9,
+            streamable_enabled = $10,
             updated_at = NOW()
         "#,
     )
@@ -175,6 +181,7 @@ pub async fn set_settings(
     .bind(settings.instagram)
     .bind(settings.bsky)
     .bind(settings.reply_cleanup)
+    .bind(settings.streamable)
     .execute(pool)
     .await?;
     Ok(())

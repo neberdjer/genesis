@@ -2,9 +2,10 @@ use super::deny;
 use crate::handlers::bsky_handler::BskyPost;
 use crate::handlers::instagram_handler::InstagramPost;
 use crate::handlers::shared;
+use crate::handlers::streamable_handler::StreamablePost;
 use crate::handlers::tiktok_handler::TikTokPost;
 use crate::handlers::twitter_handler::{TwitterError, TwitterPost};
-use crate::handlers::{bsky, instagram, tiktok, twitter};
+use crate::handlers::{bsky, instagram, streamable, tiktok, twitter};
 use crate::{Context, Error};
 use poise::CreateReply;
 use poise::serenity_prelude as serenity;
@@ -229,6 +230,62 @@ pub async fn tiktok(
     }
     ctx.send(reply).await?;
     crate::db::record_embed(&ctx.data().pool, "tiktok", true).await;
+
+    Ok(())
+}
+
+/// Fetch and post a Streamable video
+#[poise::command(
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
+pub async fn streamable(
+    ctx: Context<'_>,
+    #[description = "Streamable video URL"] url: String,
+) -> Result<(), Error> {
+    if !shared::check_rate_limit(ctx.author().id, "streamable") {
+        return deny(
+            ctx,
+            "You're being rate limited. Try again in a few seconds.",
+        )
+        .await;
+    }
+
+    ctx.defer().await?;
+    debug!("Fetching Streamable via slash command: url={}", url);
+
+    let url_owned = url.clone();
+    let post = match shared::spawn_blocking_fetch(move || StreamablePost::fetch(&url_owned)).await {
+        Ok(post) => post,
+        Err(e) => {
+            tracing::warn!("Failed to fetch Streamable via slash command: {}", e);
+            shared::report_failure(
+                ctx.serenity_context(),
+                ctx.guild_id(),
+                "streamable",
+                crate::constants::FAILURE_FETCH,
+                Some(&url),
+                &e.to_string(),
+            );
+            return deny(
+                ctx,
+                &shared::failure_reason("streamable", crate::constants::FAILURE_FETCH),
+            )
+            .await;
+        }
+    };
+
+    let (attachments, container) = streamable::build_container(&post, ctx.author().id).await;
+    let mut reply = CreateReply::default()
+        .components(vec![serenity::CreateComponent::Container(container)])
+        .flags(serenity::MessageFlags::IS_COMPONENTS_V2)
+        .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
+    for attachment in attachments {
+        reply = reply.attachment(attachment);
+    }
+    ctx.send(reply).await?;
+    crate::db::record_embed(&ctx.data().pool, "streamable", true).await;
 
     Ok(())
 }

@@ -15,6 +15,7 @@ pub struct ServerSettings {
     pub tiktok_enabled: bool,
     pub instagram_enabled: bool,
     pub bsky_enabled: bool,
+    pub streamable_enabled: bool,
     pub reply_cleanup_enabled: bool,
     pub report_channel_id: Option<String>,
 }
@@ -146,7 +147,7 @@ pub async fn get_server_settings(
 ) -> Result<ServerSettings, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled, tiktok_enabled, instagram_enabled, bsky_enabled, reply_cleanup_enabled, report_channel_id
+        SELECT guild_id, git_diffs_enabled, git_compares_enabled, git_links_enabled, twitter_enabled, tiktok_enabled, instagram_enabled, bsky_enabled, streamable_enabled, reply_cleanup_enabled, report_channel_id
         FROM server_settings
         WHERE guild_id = $1
         "#,
@@ -165,6 +166,7 @@ pub async fn get_server_settings(
             tiktok_enabled: row.try_get("tiktok_enabled")?,
             instagram_enabled: row.try_get("instagram_enabled")?,
             bsky_enabled: row.try_get("bsky_enabled")?,
+            streamable_enabled: row.try_get("streamable_enabled")?,
             reply_cleanup_enabled: row.try_get("reply_cleanup_enabled")?,
             report_channel_id: row.try_get("report_channel_id")?,
         })
@@ -178,6 +180,7 @@ pub async fn get_server_settings(
             tiktok_enabled: true,
             instagram_enabled: true,
             bsky_enabled: true,
+            streamable_enabled: true,
             reply_cleanup_enabled: false,
             report_channel_id: None,
         })
@@ -257,6 +260,16 @@ pub async fn update_server_setting(
                 VALUES ($1, $2)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET bsky_enabled = $2, updated_at = NOW()
+                "#,
+        )
+        .bind(guild_id)
+        .bind(enabled),
+        "streamable" => sqlx::query(
+            r#"
+                INSERT INTO server_settings (guild_id, streamable_enabled)
+                VALUES ($1, $2)
+                ON CONFLICT (guild_id)
+                DO UPDATE SET streamable_enabled = $2, updated_at = NOW()
                 "#,
         )
         .bind(guild_id)

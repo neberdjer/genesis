@@ -28,6 +28,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                         li { "instagram posts, reels, and full photo carousels" }
                         li { "tiktok videos and photo slideshows" }
                         li { "bluesky posts, including images, video, and quotes" }
+                        li { "streamable videos" }
                         li { "github and gitlab file snippets and commit diffs" }
                     }
                     p { "it also has timezone tools and reminders. see the " a href="/features" { "features" } " page for the full list." }
@@ -56,7 +57,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                     p {
                         "the slash commands ("
                         code { "/twitter" } ", " code { "/instagram" } ", " code { "/tiktok" } ", "
-                        code { "/bsky" } ", " code { "/git" }
+                        code { "/bsky" } ", " code { "/streamable" } ", " code { "/git" }
                         ") post one on demand, and work in dms and group chats."
                     }
                 }
@@ -67,7 +68,7 @@ pub fn faq(config: &Config, user: Option<&User>) -> Markup {
                     p {
                         "yes. the slash commands ("
                         code { "/twitter" } ", " code { "/instagram" } ", " code { "/tiktok" } ", "
-                        code { "/bsky" } ", " code { "/git" } ", " code { "/timezone" }
+                        code { "/bsky" } ", " code { "/streamable" } ", " code { "/git" } ", " code { "/timezone" }
                         ") work in dms and group chats if you added genesis to your account."
                     }
                 }

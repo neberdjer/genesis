@@ -35,6 +35,11 @@ pub const FEATURE_GROUPS: &[FeatureGroup] = &[
                 desc: "posts, images, videos, quotes, and link cards",
             },
             Feature {
+                icon: "streamable",
+                title: "streamable",
+                desc: "video clips, re-uploaded so they play inline",
+            },
+            Feature {
                 icon: "github",
                 title: "github / gitlab",
                 desc: "file snippets and commit diffs with pagination",
@@ -129,6 +134,12 @@ pub const DOMAIN_GROUPS: &[DomainGroup] = &[
         ],
     },
     DomainGroup {
+        key: "streamable",
+        label: "streamable",
+        media: true,
+        domains: &["streamable.com"],
+    },
+    DomainGroup {
         key: "git",
         label: "github / gitlab",
         media: false,
@@ -174,6 +185,10 @@ pub const COMMAND_GROUPS: &[Group] = &[
             Command {
                 usage: "/tiktok <url>",
                 desc: "post a tiktok video or photo slideshow",
+            },
+            Command {
+                usage: "/streamable <url>",
+                desc: "post a streamable video",
             },
             Command {
                 usage: "/git <url> [only_me]",
@@ -298,6 +313,7 @@ pub const TOGGLEABLE_COMMANDS: &[&str] = &[
     "twitter",
     "tiktok",
     "bsky",
+    "streamable",
     "git",
     "timezone",
     "time",

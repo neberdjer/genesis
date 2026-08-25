@@ -153,6 +153,7 @@ fn service_display(service: &str) -> &str {
         "instagram" => "Instagram",
         "tiktok" => "TikTok",
         "bsky" => "Bluesky",
+        "streamable" => "Streamable",
         "git_links" | "git_diffs" => "git",
         other => other,
     }
@@ -456,6 +457,7 @@ pub enum SettingCheck {
     Instagram,
     Twitter,
     Bsky,
+    Streamable,
     GitLinks,
     GitDiffs,
 }
@@ -619,6 +621,7 @@ pub async fn pre_check(
                     SettingCheck::Instagram => settings.instagram_enabled,
                     SettingCheck::Twitter => settings.twitter_enabled,
                     SettingCheck::Bsky => settings.bsky_enabled,
+                    SettingCheck::Streamable => settings.streamable_enabled,
                     SettingCheck::GitLinks => settings.git_links_enabled,
                     SettingCheck::GitDiffs => settings.git_diffs_enabled,
                 };

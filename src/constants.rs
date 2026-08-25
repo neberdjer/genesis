@@ -104,6 +104,11 @@ pub const BSKY_HOSTS: &[&str] = &[
     "cbsky.app",
 ];
 
+pub const STREAMABLE_ACCENT_COLOR: u32 = 0x0F90FA;
+pub const STREAMABLE_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
+pub const STREAMABLE_HOSTS: &[&str] = &["streamable.com"];
+pub const STREAMABLE_MAX_UPLOAD_BYTES: usize = 10 * 1024 * 1024;
+
 pub const RATE_LIMIT_SECONDS: u64 = 10;
 pub const MAX_RATE_LIMIT_ENTRIES: usize = 10_000;
 pub const HANDLED_MESSAGE_TTL_SECONDS: u64 = 3600;
@@ -134,6 +139,7 @@ pub const TOGGLEABLE_SERVICES: &[&str] = &[
     "tiktok",
     "instagram",
     "bsky",
+    "streamable",
 ];
 
 pub const REMINDER_POLL_SECONDS: u64 = 15;
@@ -155,6 +161,7 @@ pub const TOGGLEABLE_COMMANDS: &[&str] = &[
     "twitter",
     "tiktok",
     "bsky",
+    "streamable",
     "git",
     "timezone",
     "time",

@@ -10,8 +10,8 @@ use constants::{
 };
 use handlers::{
     handle_bot_mention, handle_bsky_links, handle_commit_diffs, handle_diff_pagination,
-    handle_git_links, handle_instagram_links, handle_member_join, handle_tiktok_links,
-    handle_twitter_links,
+    handle_git_links, handle_instagram_links, handle_member_join, handle_streamable_links,
+    handle_tiktok_links, handle_twitter_links,
 };
 use poise::serenity_prelude as serenity;
 use std::env;
@@ -101,6 +101,7 @@ async fn run_link_handlers(
         handle_git_links(ctx, msg, pool),
         handle_twitter_links(ctx, msg, pool),
         handle_tiktok_links(ctx, msg, pool),
+        handle_streamable_links(ctx, msg, pool),
         handle_instagram_links(ctx, msg, pool),
         handle_bsky_links(ctx, msg, pool),
     );
