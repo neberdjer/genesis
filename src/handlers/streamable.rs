@@ -26,17 +26,30 @@ pub async fn build_container(
     }
 
     let mut attachments = Vec::new();
-    if let Some(data) = shared::download_media(&post.video_url, STREAMABLE_DOWNLOAD_UA).await {
-        let filename = shared::media_filename("streamable", 0, &post.video_url, Some("mp4"));
-        let attachment_url = format!("attachment://{}", filename);
-        attachments.push(serenity::CreateAttachment::bytes(data, filename));
+    let gallery_url = if post.attach {
+        match shared::download_media(&post.video_url, STREAMABLE_DOWNLOAD_UA).await {
+            Some(data) => {
+                let filename =
+                    shared::media_filename("streamable", 0, &post.video_url, Some("mp4"));
+                let attachment_url = format!("attachment://{}", filename);
+                attachments.push(serenity::CreateAttachment::bytes(data, filename));
+                Some(attachment_url)
+            }
+            None => {
+                warn!("Failed to download Streamable video: {}", post.video_url);
+                None
+            }
+        }
+    } else {
+        Some(post.video_url.clone())
+    };
+
+    if let Some(url) = gallery_url {
         components.push(serenity::CreateContainerComponent::MediaGallery(
             serenity::CreateMediaGallery::new(vec![serenity::CreateMediaGalleryItem::new(
-                serenity::CreateUnfurledMediaItem::new(attachment_url),
+                serenity::CreateUnfurledMediaItem::new(url),
             )]),
         ));
-    } else {
-        warn!("Failed to download Streamable video: {}", post.video_url);
     }
 
     components.push(serenity::CreateContainerComponent::TextDisplay(

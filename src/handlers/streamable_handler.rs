@@ -30,9 +30,14 @@ struct StreamableFile {
     size: Option<u64>,
 }
 
+pub enum Media {
+    Attach(String),
+    Stream(String),
+}
+
 pub struct StreamablePost {
     pub title: String,
-    pub video_url: String,
+    pub media: Media,
 }
 
 impl StreamablePost {
@@ -63,24 +68,28 @@ impl StreamablePost {
             return Err("Streamable video is not ready".into());
         }
 
-        let video_url = Self::pick_file(&data.files)
-            .ok_or("No playable Streamable video (it may be too large to re-upload)")?;
+        let media = Self::pick_file(&data.files).ok_or("No playable Streamable video")?;
 
         Ok(Self {
             title: data.title.unwrap_or_default(),
-            video_url,
+            media,
         })
     }
 
-    fn pick_file(files: &Files) -> Option<String> {
-        let fits = |file: &Option<StreamableFile>| -> Option<String> {
-            let file = file.as_ref()?;
-            let url = file.url.clone()?;
-            match file.size {
-                Some(size) if size > STREAMABLE_MAX_UPLOAD_BYTES as u64 => None,
-                _ => Some(url),
+    fn pick_file(files: &Files) -> Option<Media> {
+        let cap = STREAMABLE_MAX_UPLOAD_BYTES as u64;
+        let fits = |file: &StreamableFile| file.size.is_none_or(|size| size <= cap);
+
+        let mut fallback = None;
+        for file in [&files.mp4, &files.mp4_mobile].into_iter().flatten() {
+            let Some(url) = &file.url else {
+                continue;
+            };
+            if fits(file) {
+                return Some(Media::Attach(url.clone()));
             }
-        };
-        fits(&files.mp4).or_else(|| fits(&files.mp4_mobile))
+            fallback.get_or_insert_with(|| url.clone());
+        }
+        fallback.map(Media::Stream)
     }
 }
