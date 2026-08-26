@@ -1,5 +1,5 @@
 use super::shared::{self, SettingCheck};
-use super::streamable_handler::{self, StreamablePost};
+use super::streamable_handler::{self, Media, StreamablePost};
 use crate::constants::{
     FAILURE_FETCH, FAILURE_SEND, STREAMABLE_ACCENT_COLOR, STREAMABLE_DOWNLOAD_UA,
 };
@@ -26,22 +26,22 @@ pub async fn build_container(
     }
 
     let mut attachments = Vec::new();
-    let gallery_url = if post.attach {
-        match shared::download_media(&post.video_url, STREAMABLE_DOWNLOAD_UA).await {
-            Some(data) => {
-                let filename =
-                    shared::media_filename("streamable", 0, &post.video_url, Some("mp4"));
-                let attachment_url = format!("attachment://{}", filename);
-                attachments.push(serenity::CreateAttachment::bytes(data, filename));
-                Some(attachment_url)
-            }
-            None => {
-                warn!("Failed to download Streamable video: {}", post.video_url);
-                None
+    let gallery_url = match &post.media {
+        Media::Attach(video_url) => {
+            match shared::download_media(video_url, STREAMABLE_DOWNLOAD_UA).await {
+                Some(data) => {
+                    let filename = shared::media_filename("streamable", 0, video_url, Some("mp4"));
+                    let attachment_url = format!("attachment://{}", filename);
+                    attachments.push(serenity::CreateAttachment::bytes(data, filename));
+                    Some(attachment_url)
+                }
+                None => {
+                    warn!("Failed to download Streamable video: {}", video_url);
+                    None
+                }
             }
         }
-    } else {
-        Some(post.video_url.clone())
+        Media::Stream(video_url) => Some(video_url.clone()),
     };
 
     if let Some(url) = gallery_url {
