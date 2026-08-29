@@ -72,9 +72,8 @@ pub fn presence_from_parts(
     status_type: &str,
     status_text: &str,
     online: &str,
-) -> (serenity::ActivityData, serenity::OnlineStatus) {
-    (
-        StatusKind::from_name(status_type).activity(status_text.to_string()),
-        OnlineKind::from_name(online).online_status(),
-    )
+) -> (Option<serenity::ActivityData>, serenity::OnlineStatus) {
+    let activity = (!status_text.trim().is_empty())
+        .then(|| StatusKind::from_name(status_type).activity(status_text.to_string()));
+    (activity, OnlineKind::from_name(online).online_status())
 }

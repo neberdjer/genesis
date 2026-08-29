@@ -147,23 +147,25 @@ async fn instagram_health_poller(ctx: serenity::Context) {
 async fn status_poller(ctx: serenity::Context) {
     let data = ctx.data::<Data>();
     let mut interval = tokio::time::interval(Duration::from_secs(STATUS_POLL_SECONDS));
-    let mut last: Option<(String, String, String)> = None;
 
     loop {
         interval.tick().await;
-        match db::get_bot_status(&data.pool).await {
-            Ok(Some(status)) => {
-                if last.as_ref() != Some(&status) {
-                    let (activity, online) = commands::moderation::status::presence_from_parts(
-                        &status.0, &status.1, &status.2,
-                    );
-                    ctx.set_presence(Some(activity), online);
-                    last = Some(status);
-                }
+        let status = match db::get_bot_status(&data.pool).await {
+            Ok(row) => row.unwrap_or_else(|| {
+                (
+                    DEFAULT_STATUS_TYPE.to_string(),
+                    DEFAULT_STATUS_TEXT.to_string(),
+                    DEFAULT_ONLINE_STATUS.to_string(),
+                )
+            }),
+            Err(e) => {
+                warn!("Failed to poll bot status: {}", e);
+                continue;
             }
-            Ok(None) => {}
-            Err(e) => warn!("Failed to poll bot status: {}", e),
-        }
+        };
+        let (activity, online) =
+            commands::moderation::status::presence_from_parts(&status.0, &status.1, &status.2);
+        ctx.set_presence(activity, online);
     }
 }
 
@@ -522,17 +524,18 @@ async fn main() -> Result<(), Error> {
         &online_status,
     );
 
-    let mut client = serenity::ClientBuilder::new_with_http(token, Arc::new(http), intents)
+    let mut builder = serenity::ClientBuilder::new_with_http(token, Arc::new(http), intents)
         .framework(Box::new(poise::Framework::new(options)))
         .event_handler(Arc::new(Handler))
-        .activity(activity)
         .status(status)
-        .data(Arc::new(data) as _)
-        .await
-        .map_err(|e| {
-            error!("Failed to create client: {}", e);
-            e
-        })?;
+        .data(Arc::new(data) as _);
+    if let Some(activity) = activity {
+        builder = builder.activity(activity);
+    }
+    let mut client = builder.await.map_err(|e| {
+        error!("Failed to create client: {}", e);
+        e
+    })?;
 
     client.start().await.map_err(|e| {
         error!("Bot error: {}", e);
