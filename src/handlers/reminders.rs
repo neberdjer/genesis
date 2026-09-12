@@ -56,10 +56,14 @@ async fn send_reminder(
     let channel_id = serenity::GenericChannelId::new(reminder.channel_id.parse()?);
     let user_id = serenity::UserId::new(reminder.user_id.parse()?);
 
-    let content = match &reminder.reminder {
+    let mut content = match &reminder.reminder {
         Some(text) => format!("<@{}> {}{}", user_id, REMINDER_PREFIX, text),
         None => format!("<@{}> Reminder.", user_id),
     };
+    if let Some(link) = &reminder.source_link {
+        content.push('\n');
+        content.push_str(link);
+    }
     let message = serenity::CreateMessage::new()
         .content(content)
         .allowed_mentions(serenity::CreateAllowedMentions::new().users(vec![user_id]))
@@ -115,9 +119,21 @@ pub async fn handle_reminder_buttons(
     }
 
     let content = &interaction.message.content;
+    let source_link = content
+        .lines()
+        .find(|line| line.starts_with("https://") && line.contains("/channels/"))
+        .map(str::to_string);
     let text = content
         .split_once(REMINDER_PREFIX)
-        .map(|(_, text)| text.to_string());
+        .map(|(_, rest)| match &source_link {
+            Some(link) => rest
+                .strip_suffix(link)
+                .unwrap_or(rest)
+                .trim_end()
+                .to_string(),
+            None => rest.to_string(),
+        })
+        .filter(|t| !t.is_empty());
 
     let remind_at = Utc::now().timestamp() + secs as i64;
     if let Err(e) = db::add_reminder(
@@ -126,6 +142,7 @@ pub async fn handle_reminder_buttons(
         &interaction.channel_id.to_string(),
         text.as_deref(),
         remind_at,
+        source_link.as_deref(),
     )
     .await
     {

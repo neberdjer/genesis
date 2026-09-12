@@ -99,6 +99,23 @@ pub async fn reminder(_ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
+fn reminder_source_link(ctx: Context<'_>) -> Option<String> {
+    let poise::Context::Prefix(pctx) = ctx else {
+        return None;
+    };
+    let reference = pctx.msg.message_reference.as_ref()?;
+    let message_id = reference.message_id?;
+    let guild = reference
+        .guild_id
+        .map(|g| g.to_string())
+        .or_else(|| ctx.guild_id().map(|g| g.to_string()))
+        .unwrap_or_else(|| "@me".to_string());
+    Some(format!(
+        "https://discord.com/channels/{}/{}/{}",
+        guild, reference.channel_id, message_id
+    ))
+}
+
 /// Set a reminder
 #[poise::command(slash_command, prefix_command)]
 pub async fn add(
@@ -148,6 +165,7 @@ pub async fn add(
         .await;
     }
 
+    let source_link = reminder_source_link(ctx);
     let remind_at = Utc::now().timestamp() + seconds as i64;
     let id = db::add_reminder(
         pool,
@@ -155,11 +173,15 @@ pub async fn add(
         &ctx.channel_id().to_string(),
         reminder_text.as_deref(),
         remind_at,
+        source_link.as_deref(),
     )
     .await?;
 
-    ctx.say(format!("Reminder `#{}` set for <t:{}:R>.", id, remind_at))
-        .await?;
+    let confirmation = match &source_link {
+        Some(link) => format!("Reminder `#{}` set for <t:{}:R>.\n{}", id, remind_at, link),
+        None => format!("Reminder `#{}` set for <t:{}:R>.", id, remind_at),
+    };
+    ctx.say(confirmation).await?;
 
     Ok(())
 }
@@ -180,10 +202,11 @@ pub async fn list(ctx: Context<'_>) -> Result<(), Error> {
             text = "(no text)".to_string();
         }
         text.truncate(shared::floor_char_boundary(&text, 60));
-        lines.push(format!(
-            "`#{}` <t:{}:R> - {}",
-            reminder.id, reminder.remind_at, text
-        ));
+        let mut line = format!("`#{}` <t:{}:R> - {}", reminder.id, reminder.remind_at, text);
+        if let Some(link) = &reminder.source_link {
+            line.push_str(&format!(" {}", link));
+        }
+        lines.push(line);
     }
 
     ctx.send(

@@ -662,6 +662,7 @@ pub struct Reminder {
     pub channel_id: String,
     pub reminder: Option<String>,
     pub remind_at: i64,
+    pub source_link: Option<String>,
 }
 
 pub async fn add_reminder(
@@ -670,11 +671,12 @@ pub async fn add_reminder(
     channel_id: &str,
     reminder: Option<&str>,
     remind_at: i64,
+    source_link: Option<&str>,
 ) -> Result<i32, sqlx::Error> {
     sqlx::query_scalar::<_, i32>(
         r#"
-        INSERT INTO reminders (user_id, channel_id, reminder, remind_at)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO reminders (user_id, channel_id, reminder, remind_at, source_link)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING id
         "#,
     )
@@ -682,6 +684,7 @@ pub async fn add_reminder(
     .bind(channel_id)
     .bind(reminder)
     .bind(remind_at)
+    .bind(source_link)
     .fetch_one(pool)
     .await
 }

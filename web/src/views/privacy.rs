@@ -46,7 +46,7 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
                 li { "which commands are turned off, per server or globally" }
                 li { "self-hosted git hosts an operator has added, and the bot's configured status" }
                 li { "blacklisted user and server ids, with an optional reason" }
-                li { "reminders you set: your user id, the channel to ping you in, when to fire, and the reminder text you typed. a reminder is deleted as soon as it fires (snoozing reschedules it)" }
+                li { "reminders you set: your user id, the channel to ping you in, when to fire, the reminder text you typed, and a link back to the message you set it on (when you reply to one). a reminder is deleted as soon as it fires (snoozing reschedules it)" }
                 li { "failed embeds: details of links that failed to embed, kept for up to 30 days so failures can be diagnosed (see failure reports below)" }
                 li { "opt-outs: if you run " code { "/optout" } ", we store your user id so genesis knows to leave your messages alone; it's removed when you run " code { "/optin" } }
             }

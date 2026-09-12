@@ -1,0 +1,2 @@
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS source_link TEXT;
+ALTER TABLE reminders ALTER COLUMN reminder DROP NOT NULL;
