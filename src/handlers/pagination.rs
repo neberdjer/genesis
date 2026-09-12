@@ -1,7 +1,5 @@
 use super::shared;
-use crate::constants::{
-    DISCORD_MESSAGE_LIMIT, FAILURE_SEND, FAILURE_TOO_LONG, PAGE_CACHE_TTL_SECONDS,
-};
+use crate::constants::{DISCORD_MESSAGE_LIMIT, FAILURE_TOO_LONG, PAGE_CACHE_TTL_SECONDS};
 use poise::serenity_prelude as serenity;
 use std::time::Instant;
 use tracing::{error, warn};
@@ -76,11 +74,9 @@ pub async fn send_first_page(
             message_builder.components(vec![serenity::CreateComponent::ActionRow(buttons)]);
     }
 
-    if shared::send_reply(ctx, msg, service, message_builder).await {
-        Ok(())
-    } else {
-        Err(FAILURE_SEND)
-    }
+    shared::send_reply(ctx, msg, service, message_builder)
+        .await
+        .map_or(Ok(()), Err)
 }
 
 pub async fn respond_ephemeral(

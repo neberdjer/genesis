@@ -1,6 +1,6 @@
 use super::shared::{self, SettingCheck};
 use super::twitter_handler::{self, TwitterError, TwitterPost};
-use crate::constants::{FAILURE_FETCH, FAILURE_SEND, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
+use crate::constants::{FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -137,10 +137,9 @@ pub async fn handle_twitter_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                if shared::send_reply(ctx, msg, "twitter", message).await {
-                    any_sent = true;
-                } else {
-                    failure = Some(FAILURE_SEND);
+                match shared::send_reply(ctx, msg, "twitter", message).await {
+                    None => any_sent = true,
+                    Some(code) => failure = Some(code),
                 }
             }
             Err(e) => {

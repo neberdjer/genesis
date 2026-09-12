@@ -1,9 +1,37 @@
-use crate::constants::{STREAMABLE_HOSTS, STREAMABLE_MAX_UPLOAD_BYTES};
+use crate::constants::{
+    FAILURE_DELETED, FAILURE_PROCESSING, STREAMABLE_HOSTS, STREAMABLE_MAX_UPLOAD_BYTES,
+};
 use regex::Regex;
 use serde::Deserialize;
 use std::sync::OnceLock;
 
 static STREAMABLE_PATTERN: OnceLock<Regex> = OnceLock::new();
+
+#[derive(Debug)]
+pub enum StreamableError {
+    NotFound,
+    Processing,
+}
+
+impl StreamableError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            StreamableError::NotFound => FAILURE_DELETED,
+            StreamableError::Processing => FAILURE_PROCESSING,
+        }
+    }
+}
+
+impl std::fmt::Display for StreamableError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StreamableError::NotFound => write!(f, "video not found"),
+            StreamableError::Processing => write!(f, "video is still processing"),
+        }
+    }
+}
+
+impl std::error::Error for StreamableError {}
 
 pub(crate) fn matches_streamable_host(url: &str) -> bool {
     super::shared::matches_host(url, STREAMABLE_HOSTS, "streamable")
@@ -59,13 +87,13 @@ impl StreamablePost {
 
         let response = match ureq::get(&api_url).call() {
             Ok(response) => response,
-            Err(ureq::Error::Status(404, _)) => return Err("Streamable video not found".into()),
+            Err(ureq::Error::Status(404, _)) => return Err(StreamableError::NotFound.into()),
             Err(e) => return Err(e.into()),
         };
 
         let data: StreamableResponse = response.into_json()?;
         if data.status != 2 {
-            return Err("Streamable video is not ready".into());
+            return Err(StreamableError::Processing.into());
         }
 
         let media = Self::pick_file(&data.files).ok_or("No playable Streamable video")?;

@@ -1,7 +1,7 @@
 use super::instagram_handler::InstagramPost;
 use super::shared::{self, SettingCheck};
 use crate::constants::{
-    FAILURE_FETCH, FAILURE_SEND, INSTAGRAM_ACCENT_COLOR, INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA,
+    FAILURE_FETCH, INSTAGRAM_ACCENT_COLOR, INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA,
     INSTAGRAM_MIRRORS,
 };
 use poise::serenity_prelude as serenity;
@@ -135,10 +135,9 @@ pub async fn handle_instagram_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                if shared::send_reply(ctx, msg, "instagram", message).await {
-                    any_sent = true;
-                } else {
-                    failure = Some(FAILURE_SEND);
+                match shared::send_reply(ctx, msg, "instagram", message).await {
+                    None => any_sent = true,
+                    Some(code) => failure = Some(code),
                 }
             }
             Err(e) => {

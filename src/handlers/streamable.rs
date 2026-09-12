@@ -1,8 +1,6 @@
 use super::shared::{self, SettingCheck};
-use super::streamable_handler::{self, Media, StreamablePost};
-use crate::constants::{
-    FAILURE_FETCH, FAILURE_SEND, STREAMABLE_ACCENT_COLOR, STREAMABLE_DOWNLOAD_UA,
-};
+use super::streamable_handler::{self, Media, StreamableError, StreamablePost};
+use crate::constants::{FAILURE_FETCH, STREAMABLE_ACCENT_COLOR, STREAMABLE_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -112,23 +110,25 @@ pub async fn handle_streamable_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                if shared::send_reply(ctx, msg, "streamable", message).await {
-                    any_sent = true;
-                } else {
-                    failure = Some(FAILURE_SEND);
+                match shared::send_reply(ctx, msg, "streamable", message).await {
+                    None => any_sent = true,
+                    Some(code) => failure = Some(code),
                 }
             }
             Err(e) => {
                 warn!("Failed to fetch Streamable {}: {}", url, e);
+                let code = e
+                    .downcast_ref::<StreamableError>()
+                    .map_or(FAILURE_FETCH, StreamableError::code);
                 shared::report_failure(
                     ctx,
                     msg.guild_id,
                     "streamable",
-                    FAILURE_FETCH,
+                    code,
                     Some(&url),
                     &e.to_string(),
                 );
-                failure = Some(FAILURE_FETCH);
+                failure = Some(code);
             }
         }
     }

@@ -1,6 +1,7 @@
 use crate::constants::{
     EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, FAILED_EMBED_REACTION, FAILURE_DELETED,
-    FAILURE_FETCH, FAILURE_NOT_TEXT, FAILURE_OUT_OF_RANGE, FAILURE_TOO_LONG, FAILURE_UNAVAILABLE,
+    FAILURE_FETCH, FAILURE_NO_PERMS, FAILURE_NOT_TEXT, FAILURE_OUT_OF_RANGE, FAILURE_PROCESSING,
+    FAILURE_SEND, FAILURE_TOO_LARGE, FAILURE_TOO_LONG, FAILURE_UNAVAILABLE,
     HANDLED_MESSAGE_TTL_SECONDS, MAX_FAILURE_DETAIL_CHARS, MAX_HANDLED_MESSAGE_ENTRIES,
     MAX_RATE_LIMIT_ENTRIES, MAX_REPORT_DEDUP_ENTRIES, META_REPORT_CHANNEL, RATE_LIMIT_SECONDS,
     REPORT_DEDUP_SECONDS,
@@ -169,16 +170,24 @@ pub fn failure_reason(service: &str, code: &str) -> String {
             "That {name} file looks like binary (a font, image, or similar), so there's nothing to show as a snippet."
         ),
         FAILURE_OUT_OF_RANGE => "Those line numbers are out of range for that file.".to_string(),
-        FAILURE_DELETED => format!("That {name} post was deleted or removed."),
+        FAILURE_DELETED => format!("That {name} link was deleted or removed."),
+        FAILURE_PROCESSING => {
+            format!("That {name} video is still processing. Try again in a moment.")
+        }
         FAILURE_UNAVAILABLE => format!(
             "That {name} post is private, age-restricted, or from a protected account, so I can't load it."
         ),
         FAILURE_TOO_LONG => {
             format!("That {name} result was too long to fit in a Discord message.")
         }
-        _ => format!(
-            "Couldn't post that {name} embed here. It may be too large, or I may be missing permission to send messages or attachments in this channel."
-        ),
+        FAILURE_TOO_LARGE => {
+            format!("That {name} embed is too large to upload to Discord here.")
+        }
+        FAILURE_NO_PERMS => {
+            "I can't post here. I'm missing permission to send messages or attach files in this channel."
+                .to_string()
+        }
+        _ => format!("Couldn't post that {name} embed here."),
     }
 }
 
@@ -341,30 +350,45 @@ pub fn report_failure(
     });
 }
 
+fn classify_send_error(err: &serenity::Error) -> &'static str {
+    use serenity::http::{HttpError, JsonErrorCode};
+    if let serenity::Error::Http(HttpError::UnsuccessfulRequest(resp)) = err {
+        match resp.error.code {
+            JsonErrorCode::MissingAccess | JsonErrorCode::LackPermissionsForAction => {
+                return FAILURE_NO_PERMS;
+            }
+            JsonErrorCode::RequestEntityTooLarge | JsonErrorCode::FileTooLarge => {
+                return FAILURE_TOO_LARGE;
+            }
+            _ => {}
+        }
+        match resp.status_code.as_u16() {
+            403 => return FAILURE_NO_PERMS,
+            413 => return FAILURE_TOO_LARGE,
+            _ => {}
+        }
+    }
+    FAILURE_SEND
+}
+
 pub async fn send_reply(
     ctx: &serenity::Context,
     msg: &serenity::Message,
     service: &str,
     reply: serenity::CreateMessage<'_>,
-) -> bool {
+) -> Option<&'static str> {
     match msg.channel_id.send_message(&ctx.http, reply).await {
         Ok(sent) => {
             super::reply_watch::watch(msg.id, sent.id, msg.channel_id, msg.author.id);
             mark_message_handled(msg.id);
             record_embed(ctx, service, true).await;
-            true
+            None
         }
         Err(e) => {
             warn!("Failed to send reply in channel {}: {}", msg.channel_id, e);
-            report_failure(
-                ctx,
-                msg.guild_id,
-                service,
-                crate::constants::FAILURE_SEND,
-                None,
-                &e.to_string(),
-            );
-            false
+            let code = classify_send_error(&e);
+            report_failure(ctx, msg.guild_id, service, code, None, &e.to_string());
+            Some(code)
         }
     }
 }

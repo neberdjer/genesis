@@ -1,6 +1,6 @@
 use super::bsky_handler::{self, BskyPost};
 use super::shared::{self, SettingCheck};
-use crate::constants::{BSKY_ACCENT_COLOR, BSKY_DOWNLOAD_UA, FAILURE_FETCH, FAILURE_SEND};
+use crate::constants::{BSKY_ACCENT_COLOR, BSKY_DOWNLOAD_UA, FAILURE_FETCH};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -125,10 +125,9 @@ pub async fn handle_bsky_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                if shared::send_reply(ctx, msg, "bsky", message).await {
-                    any_sent = true;
-                } else {
-                    failure = Some(FAILURE_SEND);
+                match shared::send_reply(ctx, msg, "bsky", message).await {
+                    None => any_sent = true,
+                    Some(code) => failure = Some(code),
                 }
             }
             Err(e) => {

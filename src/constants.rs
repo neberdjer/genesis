@@ -116,11 +116,14 @@ pub const MAX_HANDLED_MESSAGE_ENTRIES: usize = 10_000;
 
 pub const FAILURE_FETCH: &str = "fetch_failed";
 pub const FAILURE_SEND: &str = "send_failed";
+pub const FAILURE_NO_PERMS: &str = "no_perms";
+pub const FAILURE_TOO_LARGE: &str = "too_large";
 pub const FAILURE_TOO_LONG: &str = "too_long";
 pub const FAILURE_NOT_TEXT: &str = "not_text";
 pub const FAILURE_OUT_OF_RANGE: &str = "out_of_range";
 pub const FAILURE_DELETED: &str = "deleted";
 pub const FAILURE_UNAVAILABLE: &str = "unavailable";
+pub const FAILURE_PROCESSING: &str = "processing";
 pub const META_REPORT_CHANNEL: &str = "report_channel";
 pub const REPORT_DEDUP_SECONDS: u64 = 600;
 pub const MAX_REPORT_DEDUP_ENTRIES: usize = 1000;

@@ -68,6 +68,16 @@ const FAILURE_CODES: &[(&str, &str, &str)] = &[
         "the result didn't fit in a discord message",
     ),
     (
+        "too_large",
+        "too large",
+        "the media was over discord's upload size limit for that channel",
+    ),
+    (
+        "no_perms",
+        "no permission",
+        "genesis lacks permission to send messages or attach files in that channel",
+    ),
+    (
         "not_text",
         "not text",
         "the file isn't text (binary, e.g. a font or image), so there was nothing to show",
@@ -86,6 +96,11 @@ const FAILURE_CODES: &[(&str, &str, &str)] = &[
         "unavailable",
         "unavailable",
         "the post is private, age-restricted, or from a protected account",
+    ),
+    (
+        "processing",
+        "processing",
+        "the video was still being processed by the source and wasn't ready yet",
     ),
 ];
 

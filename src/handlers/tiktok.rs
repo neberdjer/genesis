@@ -1,6 +1,6 @@
 use super::shared::{self, SettingCheck};
 use super::tiktok_handler::TikTokPost;
-use crate::constants::{FAILURE_FETCH, FAILURE_SEND, TIKTOK_ACCENT_COLOR, TIKTOK_DOWNLOAD_UA};
+use crate::constants::{FAILURE_FETCH, TIKTOK_ACCENT_COLOR, TIKTOK_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::{debug, warn};
@@ -117,10 +117,9 @@ pub async fn handle_tiktok_links(
                     .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false))
                     .files(attachments);
 
-                if shared::send_reply(ctx, msg, "tiktok", message).await {
-                    any_sent = true;
-                } else {
-                    failure = Some(FAILURE_SEND);
+                match shared::send_reply(ctx, msg, "tiktok", message).await {
+                    None => any_sent = true,
+                    Some(code) => failure = Some(code),
                 }
             }
             Err(e) => {

@@ -2,7 +2,7 @@ use super::deny;
 use crate::handlers::bsky_handler::BskyPost;
 use crate::handlers::instagram_handler::InstagramPost;
 use crate::handlers::shared;
-use crate::handlers::streamable_handler::StreamablePost;
+use crate::handlers::streamable_handler::{StreamableError, StreamablePost};
 use crate::handlers::tiktok_handler::TikTokPost;
 use crate::handlers::twitter_handler::{TwitterError, TwitterPost};
 use crate::handlers::{bsky, instagram, streamable, tiktok, twitter};
@@ -260,19 +260,18 @@ pub async fn streamable(
         Ok(post) => post,
         Err(e) => {
             tracing::warn!("Failed to fetch Streamable via slash command: {}", e);
+            let code = e
+                .downcast_ref::<StreamableError>()
+                .map_or(crate::constants::FAILURE_FETCH, StreamableError::code);
             shared::report_failure(
                 ctx.serenity_context(),
                 ctx.guild_id(),
                 "streamable",
-                crate::constants::FAILURE_FETCH,
+                code,
                 Some(&url),
                 &e.to_string(),
             );
-            return deny(
-                ctx,
-                &shared::failure_reason("streamable", crate::constants::FAILURE_FETCH),
-            )
-            .await;
+            return deny(ctx, &shared::failure_reason("streamable", code)).await;
         }
     };
 

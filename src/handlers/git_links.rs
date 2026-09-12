@@ -1,9 +1,7 @@
 use super::file_pages;
 use super::git_handler::{FileResponse, GitError, GitFileLink};
 use super::shared::{self, SettingCheck};
-use crate::constants::{
-    DISCORD_MESSAGE_LIMIT, FAILURE_FETCH, FAILURE_SEND, TRUNCATED_MESSAGE_LIMIT,
-};
+use crate::constants::{DISCORD_MESSAGE_LIMIT, FAILURE_FETCH, TRUNCATED_MESSAGE_LIMIT};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::warn;
@@ -40,11 +38,9 @@ async fn send_code_snippet(
         .content(content)
         .reference_message(msg)
         .allowed_mentions(serenity::CreateAllowedMentions::new().replied_user(false));
-    if shared::send_reply(ctx, msg, "git_links", reply).await {
-        Ok(())
-    } else {
-        Err(FAILURE_SEND)
-    }
+    shared::send_reply(ctx, msg, "git_links", reply)
+        .await
+        .map_or(Ok(()), Err)
 }
 
 pub async fn handle_git_links(
