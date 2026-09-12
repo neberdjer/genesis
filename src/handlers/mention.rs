@@ -28,7 +28,7 @@ pub async fn handle_bot_mention(
     }
 
     let content = format!(
-        "My prefix is `{}`, use `{}help` to see commands.",
+        "My prefix is `{}`. Use `{}help` to see my commands.",
         prefix, prefix
     );
     let reply = serenity::CreateMessage::new()

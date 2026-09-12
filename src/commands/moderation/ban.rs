@@ -76,7 +76,7 @@ pub async fn ban(
 
     if !is_member && let Ok(Some(_)) = http.get_ban(guild_id, user.id).await {
         if is_softban {
-            ctx.say("That user is already banned. Softban cannot be performed.")
+            ctx.say("That user is already banned, so I can't softban them.")
                 .await?;
         } else {
             ctx.say("That user is already banned.").await?;

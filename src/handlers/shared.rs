@@ -181,7 +181,7 @@ pub fn failure_reason(service: &str, code: &str) -> String {
             format!("That {name} result was too long to fit in a Discord message.")
         }
         FAILURE_TOO_LARGE => {
-            format!("That {name} embed is too large to upload to Discord here.")
+            format!("That {name} embed is too large for me to upload to Discord.")
         }
         FAILURE_NO_PERMS => {
             "I can't post here. I'm missing permission to send messages or attach files in this channel."
