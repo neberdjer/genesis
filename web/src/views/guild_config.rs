@@ -12,6 +12,7 @@ const TABS: &[(&str, &str)] = &[
     ("services", "services"),
     ("commands", "commands"),
     ("welcome", "welcome"),
+    ("goodbye", "goodbye"),
     ("domains", "blocked domains"),
     ("audit", "audit log"),
     ("failures", "failure reports"),
@@ -137,6 +138,44 @@ fn welcome_panel(
             }
 
             div { button.btn.primary type="submit" { "save welcome" } }
+        }
+      }
+    }
+}
+
+fn goodbye_panel(guild: &DashGuild, settings: &Settings, channels: &[GuildChannel]) -> Markup {
+    let selected_channel = settings.goodbye_channel_id.as_deref();
+    html! {
+      section.group {
+        (panel_intro("say goodbye when a member leaves."))
+        form.config-form method="post" action=(format!("/dashboard/{}/goodbye", guild.id)) {
+            label.toggle {
+                input type="checkbox" name="enabled" checked[settings.goodbye_enabled];
+                span { "send a goodbye message when someone leaves" }
+            }
+
+            div.field {
+                label for="goodbye-channel" { "channel" }
+                select #goodbye-channel name="channel_id" {
+                    option value="" selected[selected_channel.is_none()] { "none" }
+                    @for c in channels {
+                        option value=(c.id) selected[selected_channel == Some(c.id.as_str())] {
+                            "#" (c.name)
+                        }
+                    }
+                }
+                @if channels.is_empty() {
+                    p.field-hint { "no channels found, or the bot can't view them." }
+                }
+            }
+
+            div.field {
+                label for="goodbye-message" { "message" }
+                textarea #goodbye-message name="message" rows="3" { (settings.goodbye_message) }
+                p.field-hint { "placeholders: {username}, {server_name}, {member_count}. the member who left is shown by name, never pinged." }
+            }
+
+            div { button.btn.primary type="submit" { "save goodbye" } }
         }
       }
     }
@@ -348,6 +387,7 @@ pub fn guild_config(
             @match tab {
                 "commands" => (commands_panel(guild, disabled_commands)),
                 "welcome" => (welcome_panel(guild, settings, channels, roles)),
+                "goodbye" => (goodbye_panel(guild, settings, channels)),
                 "domains" => (domains_panel(guild, domains, git_hosts, media_hosts)),
                 "audit" => (audit_panel(audit, &guild.id, audit_page, audit_total_pages)),
                 "failures" => (failures_panel(

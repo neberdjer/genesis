@@ -1,6 +1,7 @@
 pub mod delete_embed;
 pub mod general;
 pub mod git;
+pub mod goodbye;
 pub mod media;
 pub mod moderation;
 pub mod optout;
@@ -33,6 +34,7 @@ pub fn all_commands() -> Vec<poise::Command<Data, crate::Error>> {
         timezone::timezone(),
         settings::settings(),
         welcome::welcome(),
+        goodbye::goodbye(),
         optout::optout(),
         optout::optin(),
         delete_embed::delete_embed(),

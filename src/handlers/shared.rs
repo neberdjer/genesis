@@ -57,6 +57,28 @@ pub fn check_rate_limit(user_id: serenity::UserId, handler: &'static str) -> boo
     true
 }
 
+pub fn check_guild_rate_limit(
+    rate_limits: &OnceLock<Mutex<HashMap<serenity::GuildId, Instant>>>,
+    guild_id: serenity::GuildId,
+    seconds: u64,
+) -> bool {
+    let rate_limits = rate_limits.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = match rate_limits.lock() {
+        Ok(guard) => guard,
+        Err(_) => return true,
+    };
+
+    if let Some(last) = map.get(&guild_id)
+        && last.elapsed().as_secs() < seconds
+    {
+        return false;
+    }
+
+    evict_for_insert(&mut map, MAX_RATE_LIMIT_ENTRIES, seconds, |t| *t);
+    map.insert(guild_id, Instant::now());
+    true
+}
+
 async fn fire_flags_only_suppress(
     ctx: &serenity::Context,
     msg: &serenity::Message,

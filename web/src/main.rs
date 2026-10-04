@@ -126,6 +126,7 @@ async fn main() {
         .route("/dashboard/{guild_id}", get(guild_config))
         .route("/dashboard/{guild_id}/settings", post(save_settings))
         .route("/dashboard/{guild_id}/welcome", post(save_welcome))
+        .route("/dashboard/{guild_id}/goodbye", post(save_goodbye))
         .route(
             "/dashboard/{guild_id}/report-channel",
             post(save_report_channel),
@@ -412,6 +413,7 @@ async fn guild_config(
     let tab = match query.get("tab").map(String::as_str) {
         Some("commands") => "commands",
         Some("welcome") => "welcome",
+        Some("goodbye") => "goodbye",
         Some("domains") => "domains",
         Some("audit") => "audit",
         Some("failures") => "failures",
@@ -459,6 +461,11 @@ async fn guild_config(
             );
             channels = c.unwrap_or_default();
             roles = r.unwrap_or_default();
+        }
+        "goodbye" => {
+            channels = discord::guild_channels(&state.http, &state.config, &guild_id)
+                .await
+                .unwrap_or_default();
         }
         "audit" => {
             let total = db::count_audit(&state.pool, &guild_id)
@@ -708,6 +715,18 @@ async fn save_settings(
     }
 }
 
+async fn validate_guild_channel<'a>(
+    state: &AppState,
+    guild_id: &str,
+    channel: Option<&'a str>,
+) -> Option<&'a str> {
+    let id = channel?;
+    let channels = discord::guild_channels(&state.http, &state.config, guild_id)
+        .await
+        .ok()?;
+    channels.iter().any(|c| c.id == id).then_some(id)
+}
+
 #[derive(Deserialize)]
 struct WelcomeForm {
     enabled: Option<String>,
@@ -739,7 +758,7 @@ async fn save_welcome(
 
     let old = state.pool_settings(&guild_id).await;
     let enabled = form.enabled.is_some();
-    let channel = snowflake(&form.channel_id);
+    let channel = validate_guild_channel(&state, &guild_id, snowflake(&form.channel_id)).await;
     let role = snowflake(&form.role_id);
     let message = match form.message.trim() {
         "" => db::DEFAULT_WELCOME,
@@ -778,6 +797,70 @@ async fn save_welcome(
     }
 }
 
+#[derive(Deserialize)]
+struct GoodbyeForm {
+    enabled: Option<String>,
+    #[serde(default)]
+    channel_id: String,
+    #[serde(default)]
+    message: String,
+}
+
+async fn save_goodbye(
+    State(state): State<AppState>,
+    jar: PrivateCookieJar,
+    Path(guild_id): Path<String>,
+    Form(form): Form<GoodbyeForm>,
+) -> Response {
+    let Some(session) = session::read_session(&jar) else {
+        return Redirect::to("/login").into_response();
+    };
+    let access = load_guild(&state, &session, &guild_id).await;
+    if let Some(resp) = deny_mutation(
+        &access,
+        &session,
+        &format!("/dashboard/{}?tab=goodbye", guild_id),
+    ) {
+        return resp;
+    }
+
+    let old = state.pool_settings(&guild_id).await;
+    let enabled = form.enabled.is_some();
+    let channel = validate_guild_channel(&state, &guild_id, snowflake(&form.channel_id)).await;
+    let message = match form.message.trim() {
+        "" => db::DEFAULT_GOODBYE,
+        m => m,
+    };
+
+    let dest = format!("/dashboard/{}?tab=goodbye", guild_id);
+    match db::set_goodbye(&state.pool, &guild_id, enabled, channel, message).await {
+        Ok(()) => {
+            let mut changes: Vec<&str> = Vec::new();
+            if old.goodbye_enabled != enabled {
+                changes.push(if enabled { "turned on" } else { "turned off" });
+            }
+            if old.goodbye_channel_id.as_deref() != channel {
+                changes.push("changed channel");
+            }
+            if old.goodbye_message.as_str() != message {
+                changes.push("changed message");
+            }
+            if !changes.is_empty() {
+                audit(&state, &guild_id, &session, "goodbye", &changes.join(", ")).await;
+            }
+            (
+                session::set_saved(jar, state.config.cookie_secure),
+                Redirect::to(&dest),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!("set_goodbye failed: {}", e);
+            Redirect::to(&dest).into_response()
+        }
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct ReportChannelForm {
     #[serde(default)]
@@ -797,7 +880,7 @@ async fn save_report_channel(
     };
 
     let old = state.pool_settings(&guild_id).await;
-    let channel = snowflake(&form.channel_id);
+    let channel = validate_guild_channel(&state, &guild_id, snowflake(&form.channel_id)).await;
     match db::set_report_channel(&state.pool, &guild_id, channel).await {
         Ok(()) => {
             if old.report_channel_id.as_deref() != channel {

@@ -1,3 +1,4 @@
+use super::shared;
 use crate::constants::WELCOME_RATE_LIMIT_SECONDS;
 use crate::db;
 use poise::serenity_prelude as serenity;
@@ -9,23 +10,6 @@ use tracing::{error, warn};
 
 static WELCOME_RATE_LIMITS: OnceLock<Mutex<HashMap<serenity::GuildId, Instant>>> = OnceLock::new();
 
-fn check_guild_welcome_rate_limit(guild_id: serenity::GuildId) -> bool {
-    let rate_limits = WELCOME_RATE_LIMITS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut map = match rate_limits.lock() {
-        Ok(guard) => guard,
-        Err(_) => return true,
-    };
-
-    if let Some(last) = map.get(&guild_id)
-        && last.elapsed().as_secs() < WELCOME_RATE_LIMIT_SECONDS
-    {
-        return false;
-    }
-
-    map.insert(guild_id, Instant::now());
-    true
-}
-
 pub async fn handle_member_join(
     ctx: &serenity::Context,
     member: &serenity::Member,
@@ -35,7 +19,11 @@ pub async fn handle_member_join(
         return;
     }
 
-    if !check_guild_welcome_rate_limit(member.guild_id) {
+    if !shared::check_guild_rate_limit(
+        &WELCOME_RATE_LIMITS,
+        member.guild_id,
+        WELCOME_RATE_LIMIT_SECONDS,
+    ) {
         return;
     }
 

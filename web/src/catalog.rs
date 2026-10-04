@@ -290,6 +290,10 @@ pub const COMMAND_GROUPS: &[Group] = &[
                 usage: "/welcome",
                 desc: "configure welcome messages",
             },
+            Command {
+                usage: "/goodbye",
+                desc: "configure goodbye messages for members who leave",
+            },
         ],
     },
     Group {

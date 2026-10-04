@@ -14,6 +14,7 @@ pub const SERVICES: &[(&str, &str)] = &[
 ];
 
 pub const DEFAULT_WELCOME: &str = "Welcome to {server_name}, {user}";
+pub const DEFAULT_GOODBYE: &str = "{username} has left {server_name}.";
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -30,6 +31,9 @@ pub struct Settings {
     pub welcome_channel_id: Option<String>,
     pub welcome_message: String,
     pub welcome_role_id: Option<String>,
+    pub goodbye_enabled: bool,
+    pub goodbye_channel_id: Option<String>,
+    pub goodbye_message: String,
     pub report_channel_id: Option<String>,
 }
 
@@ -49,6 +53,9 @@ impl Settings {
             welcome_channel_id: None,
             welcome_message: DEFAULT_WELCOME.to_string(),
             welcome_role_id: None,
+            goodbye_enabled: false,
+            goodbye_channel_id: None,
+            goodbye_message: DEFAULT_GOODBYE.to_string(),
             report_channel_id: None,
         }
     }
@@ -85,6 +92,7 @@ pub async fn get_settings(pool: &Pool, guild_id: &str) -> Result<Settings, sqlx:
         SELECT git_diffs_enabled, git_compares_enabled, git_links_enabled,
                twitter_enabled, tiktok_enabled, instagram_enabled, bsky_enabled, streamable_enabled, reply_cleanup_enabled,
                welcome_enabled, welcome_channel_id, welcome_message, welcome_role_id,
+               goodbye_enabled, goodbye_channel_id, goodbye_message,
                report_channel_id
         FROM server_settings
         WHERE guild_id = $1
@@ -111,6 +119,11 @@ pub async fn get_settings(pool: &Pool, guild_id: &str) -> Result<Settings, sqlx:
                 .try_get::<Option<String>, _>("welcome_message")?
                 .unwrap_or_else(|| DEFAULT_WELCOME.to_string()),
             welcome_role_id: r.try_get("welcome_role_id")?,
+            goodbye_enabled: r.try_get("goodbye_enabled")?,
+            goodbye_channel_id: r.try_get("goodbye_channel_id")?,
+            goodbye_message: r
+                .try_get::<Option<String>, _>("goodbye_message")?
+                .unwrap_or_else(|| DEFAULT_GOODBYE.to_string()),
             report_channel_id: r.try_get("report_channel_id")?,
         },
         None => Settings::defaults(),
@@ -143,6 +156,34 @@ pub async fn set_welcome(
     .bind(channel_id)
     .bind(message)
     .bind(role_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn set_goodbye(
+    pool: &Pool,
+    guild_id: &str,
+    enabled: bool,
+    channel_id: Option<&str>,
+    message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings
+            (guild_id, goodbye_enabled, goodbye_channel_id, goodbye_message)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (guild_id) DO UPDATE SET
+            goodbye_enabled = $2,
+            goodbye_channel_id = $3,
+            goodbye_message = $4,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(enabled)
+    .bind(channel_id)
+    .bind(message)
     .execute(pool)
     .await?;
     Ok(())

@@ -28,6 +28,12 @@ pub struct WelcomeSettings {
     pub role_id: Option<String>,
 }
 
+pub struct GoodbyeSettings {
+    pub enabled: bool,
+    pub channel_id: Option<String>,
+    pub message: String,
+}
+
 pub async fn connect(database_url: &str) -> Result<PgPool, sqlx::Error> {
     let pool = PgPoolOptions::new()
         .max_connections(10)
@@ -579,6 +585,102 @@ pub async fn set_welcome_role(
     )
     .bind(guild_id)
     .bind(role_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn get_goodbye_settings(
+    pool: &PgPool,
+    guild_id: &str,
+) -> Result<GoodbyeSettings, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        SELECT goodbye_enabled, goodbye_channel_id, goodbye_message
+        FROM server_settings
+        WHERE guild_id = $1
+        "#,
+    )
+    .bind(guild_id)
+    .fetch_optional(pool)
+    .await?;
+
+    const DEFAULT_MESSAGE: &str = "{username} has left {server_name}.";
+    if let Some(row) = result {
+        Ok(GoodbyeSettings {
+            enabled: row.try_get("goodbye_enabled").unwrap_or(false),
+            channel_id: row.try_get("goodbye_channel_id").ok(),
+            message: row
+                .try_get("goodbye_message")
+                .unwrap_or_else(|_| DEFAULT_MESSAGE.to_string()),
+        })
+    } else {
+        Ok(GoodbyeSettings {
+            enabled: false,
+            channel_id: None,
+            message: DEFAULT_MESSAGE.to_string(),
+        })
+    }
+}
+
+pub async fn set_goodbye_enabled(
+    pool: &PgPool,
+    guild_id: &str,
+    enabled: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings (guild_id, goodbye_enabled)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET goodbye_enabled = $2, updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(enabled)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_goodbye_channel(
+    pool: &PgPool,
+    guild_id: &str,
+    channel_id: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings (guild_id, goodbye_channel_id)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET goodbye_channel_id = $2, updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(channel_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn set_goodbye_message(
+    pool: &PgPool,
+    guild_id: &str,
+    message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO server_settings (guild_id, goodbye_message)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET goodbye_message = $2, updated_at = NOW()
+        "#,
+    )
+    .bind(guild_id)
+    .bind(message)
     .execute(pool)
     .await?;
 

@@ -10,8 +10,8 @@ use constants::{
 };
 use handlers::{
     handle_bot_mention, handle_bsky_links, handle_commit_diffs, handle_diff_pagination,
-    handle_git_links, handle_instagram_links, handle_member_join, handle_streamable_links,
-    handle_tiktok_links, handle_twitter_links,
+    handle_git_links, handle_instagram_links, handle_member_join, handle_member_leave,
+    handle_streamable_links, handle_tiktok_links, handle_twitter_links,
 };
 use poise::serenity_prelude as serenity;
 use std::env;
@@ -68,6 +68,9 @@ impl serenity::EventHandler for Handler {
             }
             serenity::FullEvent::GuildMemberAddition { new_member, .. } => {
                 handle_member_join(ctx, new_member, Some(&data.pool)).await;
+            }
+            serenity::FullEvent::GuildMemberRemoval { guild_id, user, .. } => {
+                handle_member_leave(ctx, *guild_id, user, Some(&data.pool)).await;
             }
             serenity::FullEvent::MessageDelete {
                 deleted_message_id,

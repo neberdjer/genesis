@@ -41,7 +41,7 @@ pub fn privacy(config: &Config, user: Option<&User>) -> Markup {
                 "(server, channel, role, and user ids) rather than names:"
             }
             ul {
-                li { "per-server settings: which services are enabled, your welcome message, channel, and auto-role, and an optional channel for embed-failure reports" }
+                li { "per-server settings: which services are enabled, your welcome and goodbye messages and channels, the welcome auto-role, and an optional channel for embed-failure reports" }
                 li { "domains you've blocked, per server and globally" }
                 li { "which commands are turned off, per server or globally" }
                 li { "self-hosted git hosts an operator has added, and the bot's configured status" }

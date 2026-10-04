@@ -129,6 +129,7 @@ pub const REPORT_DEDUP_SECONDS: u64 = 600;
 pub const MAX_REPORT_DEDUP_ENTRIES: usize = 1000;
 pub const MAX_FAILURE_DETAIL_CHARS: usize = 300;
 pub const WELCOME_RATE_LIMIT_SECONDS: u64 = 2;
+pub const GOODBYE_RATE_LIMIT_SECONDS: u64 = 2;
 pub const DIFF_CACHE_MAX_ENTRIES: usize = 1000;
 pub const FILE_CACHE_MAX_ENTRIES: usize = 50;
 pub const PAGE_CACHE_TTL_SECONDS: u64 = 600;
