@@ -102,6 +102,11 @@ const FAILURE_CODES: &[(&str, &str, &str)] = &[
         "processing",
         "the video was still being processed by the source and wasn't ready yet",
     ),
+    (
+        "rate_limited",
+        "rate limited",
+        "the service is throttling requests (too many in a short time); it usually works again after a few minutes",
+    ),
 ];
 
 fn failure_meta(code: &str) -> (&'static str, Cow<'_, str>, Cow<'_, str>) {

@@ -1,6 +1,6 @@
 use super::deny;
 use crate::handlers::bsky_handler::BskyPost;
-use crate::handlers::instagram_handler::InstagramPost;
+use crate::handlers::instagram_handler::{InstagramError, InstagramPost};
 use crate::handlers::shared;
 use crate::handlers::streamable_handler::{StreamableError, StreamablePost};
 use crate::handlers::tiktok_handler::TikTokPost;
@@ -37,19 +37,18 @@ pub async fn instagram(
         Ok(post) => post,
         Err(e) => {
             tracing::warn!("Failed to fetch Instagram post via slash command: {}", e);
+            let code = e
+                .downcast_ref::<InstagramError>()
+                .map_or(crate::constants::FAILURE_FETCH, InstagramError::code);
             shared::report_failure(
                 ctx.serenity_context(),
                 ctx.guild_id(),
                 "instagram",
-                crate::constants::FAILURE_FETCH,
+                code,
                 Some(&url),
                 &e.to_string(),
             );
-            return deny(
-                ctx,
-                &shared::failure_reason("instagram", crate::constants::FAILURE_FETCH),
-            )
-            .await;
+            return deny(ctx, &shared::failure_reason("instagram", code)).await;
         }
     };
 

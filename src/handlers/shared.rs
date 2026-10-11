@@ -1,7 +1,7 @@
 use crate::constants::{
     EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, FAILED_EMBED_REACTION, FAILURE_DELETED,
     FAILURE_FETCH, FAILURE_NO_PERMS, FAILURE_NOT_TEXT, FAILURE_OUT_OF_RANGE, FAILURE_PROCESSING,
-    FAILURE_SEND, FAILURE_TOO_LARGE, FAILURE_TOO_LONG, FAILURE_UNAVAILABLE,
+    FAILURE_RATE_LIMITED, FAILURE_SEND, FAILURE_TOO_LARGE, FAILURE_TOO_LONG, FAILURE_UNAVAILABLE,
     HANDLED_MESSAGE_TTL_SECONDS, MAX_FAILURE_DETAIL_CHARS, MAX_HANDLED_MESSAGE_ENTRIES,
     MAX_RATE_LIMIT_ENTRIES, MAX_REPORT_DEDUP_ENTRIES, META_REPORT_CHANNEL, RATE_LIMIT_SECONDS,
     REPORT_DEDUP_SECONDS,
@@ -196,6 +196,9 @@ pub fn failure_reason(service: &str, code: &str) -> String {
         FAILURE_PROCESSING => {
             format!("That {name} video is still processing. Try again in a moment.")
         }
+        FAILURE_RATE_LIMITED => format!(
+            "{name} is rate-limiting me right now (too many requests in a short time). Try again in a few minutes."
+        ),
         FAILURE_UNAVAILABLE => format!(
             "That {name} post is private, age-restricted, or from a protected account, so I can't load it."
         ),

@@ -53,7 +53,7 @@ pub async fn goodbye(
         )
     } else {
         format!(
-            "**Goodbye Settings**\nStatus: {}\nChannel: {}\nMessage: `{}`\n\nPlaceholders: `{{server_name}}`, `{{username}}`, `{{member_count}}`\nThe member who left is shown by name, never pinged (a ping would just show \"unknown user\").",
+            "**Goodbye Settings**\nStatus: {}\nChannel: {}\nMessage: `{}`\n\nPlaceholders: `{{server_name}}`, `{{username}}`, `{{member_count}}`\nI show the member's name instead of pinging them, since a ping would just show \"unknown user\".",
             status, channel_display, settings.message
         )
     };

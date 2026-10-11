@@ -124,6 +124,7 @@ pub const FAILURE_OUT_OF_RANGE: &str = "out_of_range";
 pub const FAILURE_DELETED: &str = "deleted";
 pub const FAILURE_UNAVAILABLE: &str = "unavailable";
 pub const FAILURE_PROCESSING: &str = "processing";
+pub const FAILURE_RATE_LIMITED: &str = "rate_limited";
 pub const META_REPORT_CHANNEL: &str = "report_channel";
 pub const REPORT_DEDUP_SECONDS: u64 = 600;
 pub const MAX_REPORT_DEDUP_ENTRIES: usize = 1000;

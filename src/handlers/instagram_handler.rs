@@ -1,6 +1,6 @@
 use crate::constants::{
-    INSTAGRAM_APP_ID, INSTAGRAM_DESKTOP_UA, INSTAGRAM_DOC_IDS, INSTAGRAM_EMBED_UA,
-    INSTAGRAM_HEALTH_SHORTCODE, INSTAGRAM_HOSTS, INSTAGRAM_MAX_CAROUSEL_SLIDES,
+    FAILURE_RATE_LIMITED, INSTAGRAM_APP_ID, INSTAGRAM_DESKTOP_UA, INSTAGRAM_DOC_IDS,
+    INSTAGRAM_EMBED_UA, INSTAGRAM_HEALTH_SHORTCODE, INSTAGRAM_HOSTS, INSTAGRAM_MAX_CAROUSEL_SLIDES,
     INSTAGRAM_MIRROR_UA, INSTAGRAM_MIRRORS, INSTAGRAM_MOBILE_UA, INSTAGRAM_WEB_INFO_DOC_ID,
 };
 use regex::Regex;
@@ -34,6 +34,39 @@ struct AnonTokens {
     cookie: String,
 }
 
+#[derive(Debug)]
+pub enum InstagramError {
+    RateLimited,
+}
+
+impl InstagramError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            InstagramError::RateLimited => FAILURE_RATE_LIMITED,
+        }
+    }
+}
+
+impl std::fmt::Display for InstagramError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InstagramError::RateLimited => write!(f, "rate limited by Instagram"),
+        }
+    }
+}
+
+impl std::error::Error for InstagramError {}
+
+thread_local! {
+    static RATE_LIMITED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn body_says_rate_limited(body: &str) -> bool {
+    body.contains("Please wait a few minutes")
+        || body.contains("login_required")
+        || body.contains("require_login")
+}
+
 pub(crate) fn matches_instagram_host(url: &str) -> bool {
     super::shared::matches_host(url, INSTAGRAM_HOSTS, "instagram")
 }
@@ -54,6 +87,8 @@ impl InstagramPost {
     }
 
     fn fetch_by_id(post_id: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        RATE_LIMITED.with(|c| c.set(false));
+
         if let Some(post) = Self::fetch_web_info(post_id) {
             return Ok(Self::finalize(post));
         }
@@ -89,7 +124,38 @@ impl InstagramPost {
             return Ok(Self::finalize(post));
         }
 
+        if RATE_LIMITED.with(|c| c.get()) {
+            return Err(InstagramError::RateLimited.into());
+        }
         Err("All Instagram fetch methods failed".into())
+    }
+
+    fn call_noting_rl(result: Result<ureq::Response, ureq::Error>) -> Option<ureq::Response> {
+        match result {
+            Ok(response) => Some(response),
+            Err(err) => {
+                Self::note_rate_limit(err);
+                None
+            }
+        }
+    }
+
+    fn call_json(result: Result<ureq::Response, ureq::Error>) -> Option<Value> {
+        Self::call_noting_rl(result)?.into_json().ok()
+    }
+
+    fn note_rate_limit(err: ureq::Error) {
+        if let ureq::Error::Status(code, response) = err {
+            let rate_limited = matches!(code, 401 | 429)
+                || (code == 403
+                    && response
+                        .into_string()
+                        .map(|body| body_says_rate_limited(&body))
+                        .unwrap_or(false));
+            if rate_limited {
+                RATE_LIMITED.with(|c| c.set(true));
+            }
+        }
     }
 
     fn fetch_embed_captioned(post_id: &str) -> Option<Self> {
@@ -203,15 +269,10 @@ impl InstagramPost {
                 .timeout(Duration::from_secs(15))
                 .call();
 
-            match result {
-                Ok(response) => {
-                    if let Ok(json) = response.into_json::<Value>()
-                        && let Ok(post) = Self::parse_graphql_response(&json)
-                    {
-                        return Some(post);
-                    }
-                }
-                Err(e) => debug!("Simple GraphQL doc_id {} failed: {}", doc_id, e),
+            if let Some(json) = Self::call_json(result)
+                && let Ok(post) = Self::parse_graphql_response(&json)
+            {
+                return Some(post);
             }
         }
 
@@ -220,21 +281,22 @@ impl InstagramPost {
 
     fn harvest_tokens(post_id: &str) -> Option<AnonTokens> {
         let url = format!("https://www.instagram.com/p/{}/", post_id);
-        let response = ureq::get(&url)
-            .set("User-Agent", INSTAGRAM_DESKTOP_UA)
-            .set(
-                "Accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            )
-            .set("Accept-Language", "en-US,en;q=0.9")
-            .set("Sec-Fetch-Dest", "document")
-            .set("Sec-Fetch-Mode", "navigate")
-            .set("Sec-Fetch-Site", "none")
-            .set("Sec-Fetch-User", "?1")
-            .set("Upgrade-Insecure-Requests", "1")
-            .timeout(Duration::from_secs(15))
-            .call()
-            .ok()?;
+        let response = Self::call_noting_rl(
+            ureq::get(&url)
+                .set("User-Agent", INSTAGRAM_DESKTOP_UA)
+                .set(
+                    "Accept",
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                )
+                .set("Accept-Language", "en-US,en;q=0.9")
+                .set("Sec-Fetch-Dest", "document")
+                .set("Sec-Fetch-Mode", "navigate")
+                .set("Sec-Fetch-Site", "none")
+                .set("Sec-Fetch-User", "?1")
+                .set("Upgrade-Insecure-Requests", "1")
+                .timeout(Duration::from_secs(15))
+                .call(),
+        )?;
 
         let mut html = String::new();
         use std::io::Read as _;
@@ -310,9 +372,7 @@ impl InstagramPost {
             req = req.set("X-CSRFToken", &tokens.csrf);
         }
 
-        req.timeout(Duration::from_secs(15))
-            .send_string(&body)
-            .ok()?
+        Self::call_noting_rl(req.timeout(Duration::from_secs(15)).send_string(&body))?
             .into_string()
             .ok()
     }
@@ -390,15 +450,10 @@ impl InstagramPost {
 
             let req = req.timeout(Duration::from_secs(15));
 
-            match req.send_string(&body) {
-                Ok(response) => {
-                    if let Ok(json) = response.into_json::<Value>()
-                        && let Ok(post) = Self::parse_graphql_response(&json)
-                    {
-                        return Some(post);
-                    }
-                }
-                Err(e) => debug!("Authed GraphQL doc_id {} failed: {}", doc_id, e),
+            if let Some(json) = Self::call_json(req.send_string(&body))
+                && let Ok(post) = Self::parse_graphql_response(&json)
+            {
+                return Some(post);
             }
         }
 
@@ -409,14 +464,15 @@ impl InstagramPost {
         let media_id = Self::shortcode_to_media_id(post_id);
         let url = format!("https://i.instagram.com/api/v1/media/{}/info/", media_id);
 
-        let response = ureq::get(&url)
-            .set("User-Agent", INSTAGRAM_MOBILE_UA)
-            .set("X-Ig-App-Id", INSTAGRAM_APP_ID)
-            .set("Accept", "*/*")
-            .set("Accept-Language", "en-US,en;q=0.9")
-            .timeout(Duration::from_secs(15))
-            .call()
-            .ok()?;
+        let response = Self::call_noting_rl(
+            ureq::get(&url)
+                .set("User-Agent", INSTAGRAM_MOBILE_UA)
+                .set("X-Ig-App-Id", INSTAGRAM_APP_ID)
+                .set("Accept", "*/*")
+                .set("Accept-Language", "en-US,en;q=0.9")
+                .timeout(Duration::from_secs(15))
+                .call(),
+        )?;
 
         let json: Value = response.into_json().ok()?;
         let item = json.get("items")?.get(0)?;

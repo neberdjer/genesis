@@ -1,4 +1,4 @@
-use super::instagram_handler::InstagramPost;
+use super::instagram_handler::{InstagramError, InstagramPost};
 use super::shared::{self, SettingCheck};
 use crate::constants::{
     FAILURE_FETCH, INSTAGRAM_ACCENT_COLOR, INSTAGRAM_DESKTOP_UA, INSTAGRAM_MIRROR_UA,
@@ -142,15 +142,18 @@ pub async fn handle_instagram_links(
             }
             Err(e) => {
                 warn!("Failed to fetch Instagram {}: {}", url, e);
+                let code = e
+                    .downcast_ref::<InstagramError>()
+                    .map_or(FAILURE_FETCH, InstagramError::code);
                 shared::report_failure(
                     ctx,
                     msg.guild_id,
                     "instagram",
-                    FAILURE_FETCH,
+                    code,
                     Some(&url),
                     &e.to_string(),
                 );
-                failure = Some(FAILURE_FETCH);
+                failure = Some(code);
             }
         }
     }
