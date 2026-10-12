@@ -5,7 +5,8 @@ use crate::constants::{
 };
 use regex::Regex;
 use serde_json::Value;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
 use tracing::{debug, warn};
 
@@ -59,6 +60,46 @@ impl std::error::Error for InstagramError {}
 
 thread_local! {
     static RATE_LIMITED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+static SESSIONID: OnceLock<RwLock<Option<String>>> = OnceLock::new();
+static SESSION_DEAD: AtomicBool = AtomicBool::new(false);
+
+fn session_slot() -> &'static RwLock<Option<String>> {
+    SESSIONID.get_or_init(|| RwLock::new(None))
+}
+
+pub fn set_sessionid(value: Option<String>) {
+    if let Ok(mut slot) = session_slot().write() {
+        *slot = value;
+    }
+}
+
+fn current_sessionid() -> Option<String> {
+    session_slot().read().ok().and_then(|slot| slot.clone())
+}
+
+pub fn session_active() -> bool {
+    session_slot().read().is_ok_and(|slot| slot.is_some())
+}
+
+pub fn take_session_dead() -> bool {
+    SESSION_DEAD.swap(false, Ordering::Relaxed)
+}
+
+fn session_cookie_parts() -> Vec<String> {
+    let Some(sid) = current_sessionid() else {
+        return Vec::new();
+    };
+    let mut parts = vec![format!("sessionid={}", sid)];
+    let decoded = sid.replacen("%3A", ":", 1);
+    if let Some(ds_user_id) = decoded.split(':').next()
+        && !ds_user_id.is_empty()
+        && ds_user_id.bytes().all(|b| b.is_ascii_digit())
+    {
+        parts.push(format!("ds_user_id={}", ds_user_id));
+    }
+    parts
 }
 
 fn body_says_rate_limited(body: &str) -> bool {
@@ -145,16 +186,20 @@ impl InstagramPost {
     }
 
     fn note_rate_limit(err: ureq::Error) {
-        if let ureq::Error::Status(code, response) = err {
-            let rate_limited = matches!(code, 401 | 429)
-                || (code == 403
-                    && response
-                        .into_string()
-                        .map(|body| body_says_rate_limited(&body))
-                        .unwrap_or(false));
-            if rate_limited {
-                RATE_LIMITED.with(|c| c.set(true));
-            }
+        let ureq::Error::Status(code, response) = err else {
+            return;
+        };
+        let logged_out = code == 401
+            || (code == 403
+                && response
+                    .into_string()
+                    .map(|body| body_says_rate_limited(&body))
+                    .unwrap_or(false));
+        if logged_out || code == 429 {
+            RATE_LIMITED.with(|c| c.set(true));
+        }
+        if logged_out && session_active() {
+            SESSION_DEAD.store(true, Ordering::Relaxed);
         }
     }
 
@@ -312,7 +357,7 @@ impl InstagramPost {
         let device_id = Self::extract_device_id(&html);
         let machine_id = Self::extract_machine_id(&html);
 
-        let mut cookie_parts = Vec::new();
+        let mut cookie_parts = session_cookie_parts();
         if !csrf.is_empty() {
             cookie_parts.push(format!("csrftoken={}", csrf));
         }
@@ -464,15 +509,16 @@ impl InstagramPost {
         let media_id = Self::shortcode_to_media_id(post_id);
         let url = format!("https://i.instagram.com/api/v1/media/{}/info/", media_id);
 
-        let response = Self::call_noting_rl(
-            ureq::get(&url)
-                .set("User-Agent", INSTAGRAM_MOBILE_UA)
-                .set("X-Ig-App-Id", INSTAGRAM_APP_ID)
-                .set("Accept", "*/*")
-                .set("Accept-Language", "en-US,en;q=0.9")
-                .timeout(Duration::from_secs(15))
-                .call(),
-        )?;
+        let mut request = ureq::get(&url)
+            .set("User-Agent", INSTAGRAM_MOBILE_UA)
+            .set("X-Ig-App-Id", INSTAGRAM_APP_ID)
+            .set("Accept", "*/*")
+            .set("Accept-Language", "en-US,en;q=0.9");
+        let cookie = session_cookie_parts().join("; ");
+        if !cookie.is_empty() {
+            request = request.set("Cookie", &cookie);
+        }
+        let response = Self::call_noting_rl(request.timeout(Duration::from_secs(15)).call())?;
 
         let json: Value = response.into_json().ok()?;
         let item = json.get("items")?.get(0)?;

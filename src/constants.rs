@@ -16,6 +16,7 @@ pub const DEFAULT_ENVIRONMENT: &str = "prod";
 pub const STATUS_POLL_SECONDS: u64 = 20;
 pub const MEDIA_HOSTS_POLL_SECONDS: u64 = 60;
 pub const INSTAGRAM_DOC_ID_POLL_SECONDS: u64 = 21_600;
+pub const INSTAGRAM_SESSION_POLL_SECONDS: u64 = 60;
 pub const INSTAGRAM_HEALTH_SHORTCODE: &str = "Dbqyg11kVWo";
 pub const REPLY_WATCH_SECONDS: u64 = 60;
 pub const FAILED_EMBED_REACTION: char = '❌';

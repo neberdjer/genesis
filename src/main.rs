@@ -5,8 +5,8 @@ mod handlers;
 
 use constants::{
     DEFAULT_ENVIRONMENT, DEFAULT_ONLINE_STATUS, DEFAULT_PREFIX, DEFAULT_STATUS_TEXT,
-    DEFAULT_STATUS_TYPE, INSTAGRAM_DOC_ID_POLL_SECONDS, MEDIA_HOSTS_POLL_SECONDS,
-    STATUS_POLL_SECONDS, TOGGLEABLE_COMMANDS,
+    DEFAULT_STATUS_TYPE, INSTAGRAM_DOC_ID_POLL_SECONDS, INSTAGRAM_SESSION_POLL_SECONDS,
+    MEDIA_HOSTS_POLL_SECONDS, STATUS_POLL_SECONDS, TOGGLEABLE_COMMANDS,
 };
 use handlers::{
     handle_bot_mention, handle_bsky_links, handle_commit_diffs, handle_diff_pagination,
@@ -85,6 +85,9 @@ impl serenity::EventHandler for Handler {
                     tokio::spawn(status_poller(ctx.clone()));
                     tokio::spawn(custom_hosts_poller(ctx.clone()));
                     tokio::spawn(instagram_health_poller(ctx.clone()));
+                    if handlers::instagram_handler::session_active() {
+                        tokio::spawn(instagram_session_watch(ctx.clone()));
+                    }
                     tokio::spawn(handlers::reminders::reminder_poller(ctx.clone()));
                     tokio::spawn(register_commands_on_update(ctx.clone()));
                 }
@@ -141,6 +144,45 @@ async fn instagram_health_poller(ctx: serenity::Context) {
                 "**instagram** the web_info doc_id looks dead (GraphQL returned `execution error`). \
                  Update `INSTAGRAM_WEB_INFO_DOC_ID` from instaloader master (structures.py, the \
                  `xdt_api__v1__media__shortcode__web_info` query).",
+            )
+            .await;
+        }
+    }
+}
+
+async fn seed_instagram_session(pool: &sqlx::PgPool) {
+    let env_sid = env::var("INSTAGRAM_SESSIONID")
+        .ok()
+        .filter(|sid| !sid.is_empty());
+    let sessionid = match &env_sid {
+        Some(sid) => {
+            if let Err(e) = db::set_meta(pool, "instagram_sessionid", sid).await {
+                warn!("Failed to persist instagram sessionid: {}", e);
+            }
+            Some(sid.clone())
+        }
+        None => db::get_meta(pool, "instagram_sessionid")
+            .await
+            .ok()
+            .flatten(),
+    };
+    if sessionid.is_some() {
+        handlers::instagram_handler::set_sessionid(sessionid);
+        info!("Instagram session cookie loaded; using authenticated fetching");
+    }
+}
+
+async fn instagram_session_watch(ctx: serenity::Context) {
+    let mut interval = tokio::time::interval(Duration::from_secs(INSTAGRAM_SESSION_POLL_SECONDS));
+    loop {
+        interval.tick().await;
+        if handlers::instagram_handler::take_session_dead() {
+            handlers::instagram_handler::set_sessionid(None);
+            handlers::shared::report_global(
+                &ctx,
+                "**instagram** the configured session cookie was rejected and has been cleared; \
+                 falling back to anonymous fetching. Set a fresh `INSTAGRAM_SESSIONID` to restore \
+                 authenticated access.",
             )
             .await;
         }
@@ -475,6 +517,8 @@ async fn main() -> Result<(), Error> {
     info!("Connecting to database and running migrations...");
     let pool = db::connect(&database_url).await?;
     info!("Database connected and migrations applied successfully");
+
+    seed_instagram_session(&pool).await;
 
     info!(
         "Starting bot in {} mode with prefix '{}'",
