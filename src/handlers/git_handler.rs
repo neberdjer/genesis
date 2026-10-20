@@ -85,7 +85,7 @@ impl GitFileLink {
             "https://raw.githubusercontent.com/{}/{}/{}/{}",
             owner, repo, commit, path
         );
-        let file_name = path.split('/').next_back().unwrap_or(path).to_string();
+        let file_name = Self::file_name_from_path(path);
 
         Some(Self {
             platform: GitPlatform::GitHub,
@@ -115,7 +115,7 @@ impl GitFileLink {
         let end_line = captures.get(6).and_then(|m| m.as_str().parse().ok());
 
         let raw_url = format!("https://{}/{}/-/raw/{}/{}", host, full_path, commit, path);
-        let file_name = path.split('/').next_back().unwrap_or(path).to_string();
+        let file_name = Self::file_name_from_path(path);
 
         Some(Self {
             platform: GitPlatform::GitLab,
@@ -149,13 +149,13 @@ impl GitFileLink {
             "https://{}/{}/{}/src/{}/{}",
             host, project, version, crate_name, file_path
         );
-        let file_name = file_path.split('/').next_back().unwrap_or(file_path);
+        let file_name = Self::file_name_from_path(file_path);
 
         Some(Self {
             platform: GitPlatform::RustDoc,
             original_url: url.to_string(),
             raw_url,
-            file_name: file_name.to_string(),
+            file_name,
             start_line,
             end_line,
         })
@@ -183,7 +183,7 @@ impl GitFileLink {
             "https://{}/{}/{}/raw/{}/{}",
             host, owner, repo, commit, path
         );
-        let file_name = path.split('/').next_back().unwrap_or(path).to_string();
+        let file_name = Self::file_name_from_path(path);
 
         Some(Self {
             platform: GitPlatform::Gitea,
@@ -193,6 +193,15 @@ impl GitFileLink {
             start_line,
             end_line,
         })
+    }
+
+    fn file_name_from_path(path: &str) -> String {
+        let decoded = urlencoding::decode(path).unwrap_or(std::borrow::Cow::Borrowed(path));
+        decoded
+            .rsplit('/')
+            .next()
+            .unwrap_or(&decoded)
+            .to_string()
     }
 
     pub fn fetch_content(
