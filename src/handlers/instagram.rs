@@ -35,16 +35,10 @@ pub async fn build_container(
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let header = if post.username.is_empty() {
-        if post.author.is_empty() {
-            "**Instagram**".to_string()
-        } else {
-            format!("**{}**", post.author)
-        }
-    } else if post.author.is_empty() || post.author == post.username {
-        format!("**@{}**", post.username)
-    } else {
-        format!("**{}** (@{})", post.author, post.username)
+    let header = match (post.author.is_empty(), post.username.is_empty()) {
+        (true, true) => "**Instagram**".to_string(),
+        (false, true) => format!("**{}**", shared::escape_markdown(&post.author)),
+        _ => shared::author_header(&post.author, &post.username),
     };
 
     let mut gallery = MediaGallery::default();
@@ -57,7 +51,7 @@ pub async fn build_container(
 
     shared::post_container(
         header,
-        &post.text,
+        &shared::escape_text(&post.text),
         "",
         gallery,
         user_id,

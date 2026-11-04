@@ -19,7 +19,7 @@ pub async fn build_container(
     let header = if post.title.is_empty() {
         String::new()
     } else {
-        format!("**{}**", post.title)
+        format!("**{}**", shared::escape_markdown(&post.title))
     };
 
     let mut gallery = MediaGallery::default();

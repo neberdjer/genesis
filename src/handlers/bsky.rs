@@ -3,6 +3,7 @@ use super::shared::{self, MediaGallery, SettingCheck};
 use crate::constants::{BSKY_ACCENT_COLOR, BSKY_DOWNLOAD_UA, FAILURE_FETCH};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
+use std::fmt::Write as _;
 use tracing::{debug, warn};
 
 fn is_bsky_url(word: &str) -> bool {
@@ -16,23 +17,18 @@ pub async fn build_container(
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let header = if post.author == post.handle {
-        format!("**@{}**", post.handle)
-    } else {
-        format!("**{}** (@{})", post.author, post.handle)
-    };
-
     let mut trailer = String::new();
     if let Some((title, uri)) = &post.external {
-        trailer.push_str(&format!("\n\n[{}]({})", title, uri));
+        let _ = write!(trailer, "\n\n[{}]({})", shared::escape_markdown(title), uri);
     }
     if let Some(quote_author) = &post.quote_author {
-        let quoted = post
-            .quote_text
-            .as_deref()
-            .unwrap_or("")
-            .replace('\n', "\n> ");
-        trailer.push_str(&format!("\n\n> **{}**\n> {}", quote_author, quoted));
+        let quote = shared::escape_text(post.quote_text.as_deref().unwrap_or(""));
+        let _ = write!(
+            trailer,
+            "\n\n> **{}**\n> {}",
+            shared::escape_markdown(quote_author),
+            quote.replace('\n', "\n> ")
+        );
     }
 
     let mut gallery = MediaGallery::default();
@@ -43,8 +39,8 @@ pub async fn build_container(
     }
 
     shared::post_container(
-        header,
-        &post.text,
+        shared::author_header(&post.author, &post.handle),
+        &shared::escape_text(&post.text),
         &trailer,
         gallery,
         user_id,

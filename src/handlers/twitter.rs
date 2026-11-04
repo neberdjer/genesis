@@ -4,7 +4,7 @@ use crate::constants::{
     FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA, TWITTER_MAX_QUOTE_CHARS,
 };
 use poise::serenity_prelude as serenity;
-use regex::{Captures, Regex};
+use regex::Regex;
 use sqlx::PgPool;
 use std::sync::OnceLock;
 use tracing::{debug, warn};
@@ -19,62 +19,42 @@ fn is_twitter_url(word: &str) -> bool {
     twitter_handler::matches_twitter_host(word) && lower.contains("/status/")
 }
 
-const MARKDOWN_CHARS: &str = "\\*_~`|<>[]()#-";
-
 fn mention_link(username: &str) -> String {
     format!(
         "[@{}](<https://x.com/{}>)",
-        escape_markdown(username),
+        shared::escape_markdown(username),
         username
     )
-}
-
-fn escape_markdown(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        if MARKDOWN_CHARS.contains(c) {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
 }
 
 fn author_line(author: &str, username: &str) -> String {
     format!(
         "**{}** ({})",
-        escape_markdown(author),
+        shared::escape_markdown(author),
         mention_link(username)
     )
 }
 
 fn render_text(text: &str, mentions: &[String]) -> String {
-    static TOKEN_PATTERN: OnceLock<Regex> = OnceLock::new();
-    let pattern = TOKEN_PATTERN.get_or_init(|| {
-        Regex::new(&format!(
-            r"(?<url>https?://\S+)|\B@(?<name>[A-Za-z0-9_]{{1,15}})\b|[{}]",
-            regex::escape(MARKDOWN_CHARS)
-        ))
-        .unwrap()
-    });
+    static MENTION_PATTERN: OnceLock<Regex> = OnceLock::new();
+    let pattern = MENTION_PATTERN.get_or_init(|| Regex::new(r"\B@([A-Za-z0-9_]{1,15})\b").unwrap());
 
-    pattern
-        .replace_all(text, |caps: &Captures| {
-            if caps.name("url").is_some() {
-                return caps[0].to_string();
+    shared::map_outside_urls(text, |segment| {
+        let mut out = String::with_capacity(segment.len());
+        let mut last = 0;
+        for caps in pattern.captures_iter(segment) {
+            let name = &caps[1];
+            if !mentions.iter().any(|m| m.eq_ignore_ascii_case(name)) {
+                continue;
             }
-            match caps.name("name") {
-                Some(name)
-                    if mentions
-                        .iter()
-                        .any(|m| m.eq_ignore_ascii_case(name.as_str())) =>
-                {
-                    mention_link(name.as_str())
-                }
-                _ => escape_markdown(&caps[0]),
-            }
-        })
-        .into_owned()
+            let whole = caps.get(0).unwrap();
+            out.push_str(&shared::escape_markdown(&segment[last..whole.start()]));
+            out.push_str(&mention_link(name));
+            last = whole.end();
+        }
+        out.push_str(&shared::escape_markdown(&segment[last..]));
+        out
+    })
 }
 
 pub async fn build_container(

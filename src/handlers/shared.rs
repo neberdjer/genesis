@@ -552,6 +552,50 @@ impl MediaGallery {
     }
 }
 
+const MARKDOWN_CHARS: &str = "\\*_~`|<>[]()#-";
+
+pub fn escape_markdown(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if MARKDOWN_CHARS.contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+pub fn map_outside_urls(text: &str, mut f: impl FnMut(&str) -> String) -> String {
+    static URL_PATTERN: OnceLock<regex::Regex> = OnceLock::new();
+    let pattern = URL_PATTERN.get_or_init(|| regex::Regex::new(r"https?://\S+").unwrap());
+
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for url in pattern.find_iter(text) {
+        out.push_str(&f(&text[last..url.start()]));
+        out.push_str(url.as_str());
+        last = url.end();
+    }
+    out.push_str(&f(&text[last..]));
+    out
+}
+
+pub fn escape_text(text: &str) -> String {
+    map_outside_urls(text, escape_markdown)
+}
+
+pub fn author_header(author: &str, handle: &str) -> String {
+    if author.is_empty() || author == handle {
+        format!("**@{}**", escape_markdown(handle))
+    } else {
+        format!(
+            "**{}** (@{})",
+            escape_markdown(author),
+            escape_markdown(handle)
+        )
+    }
+}
+
 pub fn sent_by_footer(user_id: serenity::UserId) -> String {
     format!("-# Sent by <@{}>", user_id)
 }
