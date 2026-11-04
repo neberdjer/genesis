@@ -1,4 +1,4 @@
-use super::shared::{self, SettingCheck};
+use super::shared::{self, MediaGallery, SettingCheck};
 use super::tiktok_handler::TikTokPost;
 use crate::constants::{FAILURE_FETCH, TIKTOK_ACCENT_COLOR, TIKTOK_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
@@ -16,43 +16,20 @@ pub async fn build_container(
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let mut content = format!("**{}** (@{})", post.author, post.username);
-    if !post.text.is_empty() {
-        content.push_str(&format!("\n{}", post.text));
-    }
-
-    let mut components: Vec<serenity::CreateContainerComponent<'static>> =
-        vec![serenity::CreateContainerComponent::TextDisplay(
-            serenity::CreateTextDisplay::new(content),
-        )];
-
-    let mut attachments = Vec::new();
-    let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
-    for (i, media_url) in post.media.iter().take(10).enumerate() {
+    let mut gallery = MediaGallery::default();
+    for (i, media_url) in post.media.iter().enumerate() {
         let filename = shared::media_filename("tiktok", i, media_url, None);
-        if let Some(data) = shared::download_media(media_url, TIKTOK_DOWNLOAD_UA).await {
-            let attachment_url = format!("attachment://{}", filename);
-            attachments.push(serenity::CreateAttachment::bytes(data, filename));
-            gallery_items.push(serenity::CreateMediaGalleryItem::new(
-                serenity::CreateUnfurledMediaItem::new(attachment_url),
-            ));
-        } else {
-            warn!("Failed to download media: {}", media_url);
-        }
+        gallery.add(media_url, TIKTOK_DOWNLOAD_UA, filename).await;
     }
 
-    if !gallery_items.is_empty() {
-        components.push(serenity::CreateContainerComponent::MediaGallery(
-            serenity::CreateMediaGallery::new(gallery_items),
-        ));
-    }
-
-    components.push(serenity::CreateContainerComponent::TextDisplay(
-        serenity::CreateTextDisplay::new(format!("-# Sent by <@{}>", user_id)),
-    ));
-
-    let container = serenity::CreateContainer::new(components).accent_color(TIKTOK_ACCENT_COLOR);
-    (attachments, container)
+    shared::post_container(
+        format!("**{}** (@{})", post.author, post.username),
+        &post.text,
+        "",
+        gallery,
+        user_id,
+        TIKTOK_ACCENT_COLOR,
+    )
 }
 
 struct FoundVideo {

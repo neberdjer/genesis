@@ -1,8 +1,7 @@
-use super::shared::{self, MediaDownload, SettingCheck};
+use super::shared::{self, MediaGallery, SettingCheck};
 use super::twitter_handler::{self, TwitterError, TwitterPost};
 use crate::constants::{
-    DISCORD_MAX_TEXT_CHARS, DISCORD_MAX_UPLOAD_BYTES, FAILURE_FETCH, TWITTER_ACCENT_COLOR,
-    TWITTER_DOWNLOAD_UA, TWITTER_MAX_QUOTE_CHARS,
+    FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA, TWITTER_MAX_QUOTE_CHARS,
 };
 use poise::serenity_prelude as serenity;
 use regex::{Captures, Regex};
@@ -78,37 +77,6 @@ fn render_text(text: &str, mentions: &[String]) -> String {
         .into_owned()
 }
 
-fn utf16_len(text: &str) -> usize {
-    text.encode_utf16().count()
-}
-
-fn truncate_text(text: &str, max: usize) -> String {
-    if utf16_len(text) <= max {
-        return text.to_string();
-    }
-
-    let budget = max.saturating_sub(1);
-    let mut used = 0;
-    let mut cut = 0;
-    for (i, c) in text.char_indices() {
-        used += c.len_utf16();
-        if used > budget {
-            break;
-        }
-        cut = i + c.len_utf8();
-    }
-
-    let head = &text[..cut];
-    let head = if text[cut..].starts_with(char::is_whitespace) {
-        head.trim_end()
-    } else if let Some(i) = head.rfind(char::is_whitespace).filter(|&i| i > 0) {
-        head[..i].trim_end()
-    } else {
-        head.trim_end_matches('\\')
-    };
-    format!("{}…", head)
-}
-
 pub async fn build_container(
     post: &TwitterPost,
     user_id: serenity::UserId,
@@ -116,8 +84,7 @@ pub async fn build_container(
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let mut content = author_line(&post.author, &post.username);
-
+    let mut header = author_line(&post.author, &post.username);
     if !post.replying_to.is_empty() {
         let names = post
             .replying_to
@@ -125,7 +92,7 @@ pub async fn build_container(
             .map(|n| mention_link(n))
             .collect::<Vec<_>>()
             .join(" ");
-        content.push_str(&format!("\nReplying to {}", names));
+        header.push_str(&format!("\nReplying to {}", names));
     }
 
     let quote_block = match (&post.quote_author, &post.quote_username, &post.quote_text) {
@@ -134,81 +101,36 @@ pub async fn build_container(
             format!(
                 "\n\n> {}\n> {}",
                 author_line(quote_author, quote_username),
-                truncate_text(&quoted, TWITTER_MAX_QUOTE_CHARS)
+                shared::truncate_text(&quoted, TWITTER_MAX_QUOTE_CHARS)
             )
         }
         _ => String::new(),
     };
 
-    let footer = format!("-# Sent by <@{}>", user_id);
-
-    if !post.text.is_empty() {
-        content.push('\n');
-        let used = utf16_len(&content) + utf16_len(&quote_block) + utf16_len(&footer);
-        let body = render_text(&post.text, &post.mentions);
-        content.push_str(&truncate_text(
-            &body,
-            DISCORD_MAX_TEXT_CHARS.saturating_sub(used),
-        ));
-    }
-
-    content.push_str(&quote_block);
-
-    let mut components: Vec<serenity::CreateContainerComponent<'static>> =
-        vec![serenity::CreateContainerComponent::TextDisplay(
-            serenity::CreateTextDisplay::new(content),
-        )];
-
-    let mut attachments = Vec::new();
-    let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
-    let mut remaining = DISCORD_MAX_UPLOAD_BYTES;
-    for (i, item) in post.media.iter().take(10).enumerate() {
-        let data =
-            match shared::download_media_capped(&item.url, TWITTER_DOWNLOAD_UA, remaining).await {
-                Some(MediaDownload::Data(data)) => data,
-                Some(MediaDownload::TooLarge) => {
-                    debug!("Media too large to attach, linking instead: {}", item.url);
-                    gallery_items.push(serenity::CreateMediaGalleryItem::new(
-                        serenity::CreateUnfurledMediaItem::new(item.url.clone()),
-                    ));
-                    continue;
-                }
-                None => {
-                    warn!("Failed to download media: {}", item.url);
-                    continue;
-                }
-            };
-
+    let mut gallery = MediaGallery::default();
+    for (i, item) in post.media.iter().enumerate() {
+        let Some(data) = gallery.fetch(&item.url, TWITTER_DOWNLOAD_UA).await else {
+            continue;
+        };
         let (data, ext) = if item.is_gif {
             match shared::mp4_to_gif(data.clone()).await {
-                Some(gif) if gif.len() <= remaining => (gif, Some("gif")),
+                Some(gif) if gif.len() <= gallery.remaining() => (gif, Some("gif")),
                 _ => (data, Some("mp4")),
             }
         } else {
             (data, None)
         };
-
-        remaining -= data.len();
-        let filename = shared::media_filename("twitter", i, &item.url, ext);
-        let attachment_url = format!("attachment://{}", filename);
-        attachments.push(serenity::CreateAttachment::bytes(data, filename));
-        gallery_items.push(serenity::CreateMediaGalleryItem::new(
-            serenity::CreateUnfurledMediaItem::new(attachment_url),
-        ));
+        gallery.attach(data, shared::media_filename("twitter", i, &item.url, ext));
     }
 
-    if !gallery_items.is_empty() {
-        components.push(serenity::CreateContainerComponent::MediaGallery(
-            serenity::CreateMediaGallery::new(gallery_items),
-        ));
-    }
-
-    components.push(serenity::CreateContainerComponent::TextDisplay(
-        serenity::CreateTextDisplay::new(footer),
-    ));
-
-    let container = serenity::CreateContainer::new(components).accent_color(TWITTER_ACCENT_COLOR);
-    (attachments, container)
+    shared::post_container(
+        header,
+        &render_text(&post.text, &post.mentions),
+        &quote_block,
+        gallery,
+        user_id,
+        TWITTER_ACCENT_COLOR,
+    )
 }
 
 pub async fn handle_twitter_links(

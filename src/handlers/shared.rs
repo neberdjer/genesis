@@ -1,4 +1,5 @@
 use crate::constants::{
+    DISCORD_MAX_GALLERY_ITEMS, DISCORD_MAX_TEXT_CHARS, DISCORD_MAX_UPLOAD_BYTES,
     EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, FAILED_EMBED_REACTION, FAILURE_DELETED,
     FAILURE_FETCH, FAILURE_NO_PERMS, FAILURE_NOT_TEXT, FAILURE_OUT_OF_RANGE, FAILURE_PROCESSING,
     FAILURE_RATE_LIMITED, FAILURE_SEND, FAILURE_TOO_LARGE, FAILURE_TOO_LONG, FAILURE_UNAVAILABLE,
@@ -445,19 +446,12 @@ pub fn media_filename(prefix: &str, index: usize, url: &str, ext_override: Optio
     format!("{}_{}.{}", prefix, index, ext)
 }
 
-pub enum MediaDownload {
+enum MediaDownload {
     Data(Vec<u8>),
     TooLarge,
 }
 
-pub async fn download_media(url: &str, user_agent: &str) -> Option<Vec<u8>> {
-    match download_media_capped(url, user_agent, usize::MAX).await? {
-        MediaDownload::Data(bytes) => Some(bytes),
-        MediaDownload::TooLarge => None,
-    }
-}
-
-pub async fn download_media_capped(
+async fn download_media_capped(
     url: &str,
     user_agent: &str,
     max_bytes: usize,
@@ -485,6 +479,156 @@ pub async fn download_media_capped(
     })
     .await
     .ok()?
+}
+
+pub struct MediaGallery {
+    attachments: Vec<serenity::CreateAttachment<'static>>,
+    items: Vec<serenity::CreateMediaGalleryItem<'static>>,
+    remaining: usize,
+}
+
+impl Default for MediaGallery {
+    fn default() -> Self {
+        Self {
+            attachments: Vec::new(),
+            items: Vec::new(),
+            remaining: DISCORD_MAX_UPLOAD_BYTES,
+        }
+    }
+}
+
+impl MediaGallery {
+    pub fn remaining(&self) -> usize {
+        self.remaining
+    }
+
+    pub async fn fetch(&mut self, url: &str, user_agent: &str) -> Option<Vec<u8>> {
+        if self.items.len() >= DISCORD_MAX_GALLERY_ITEMS {
+            return None;
+        }
+        if self.remaining == 0 {
+            self.link(url);
+            return None;
+        }
+        match download_media_capped(url, user_agent, self.remaining).await {
+            Some(MediaDownload::Data(data)) => Some(data),
+            Some(MediaDownload::TooLarge) => {
+                self.link(url);
+                None
+            }
+            None => {
+                warn!("Failed to download media: {}", url);
+                None
+            }
+        }
+    }
+
+    pub async fn add(&mut self, url: &str, user_agent: &str, filename: String) {
+        if let Some(data) = self.fetch(url, user_agent).await {
+            self.attach(data, filename);
+        }
+    }
+
+    pub fn attach(&mut self, data: Vec<u8>, filename: String) {
+        self.remaining = self.remaining.saturating_sub(data.len());
+        let attachment_url = format!("attachment://{}", filename);
+        self.attachments
+            .push(serenity::CreateAttachment::bytes(data, filename));
+        self.push_item(attachment_url);
+    }
+
+    pub fn link(&mut self, url: &str) {
+        if self.items.len() >= DISCORD_MAX_GALLERY_ITEMS {
+            return;
+        }
+        debug!("Linking media instead of attaching: {}", url);
+        self.push_item(url.to_string());
+    }
+
+    fn push_item(&mut self, url: String) {
+        self.items.push(serenity::CreateMediaGalleryItem::new(
+            serenity::CreateUnfurledMediaItem::new(url),
+        ));
+    }
+}
+
+pub fn sent_by_footer(user_id: serenity::UserId) -> String {
+    format!("-# Sent by <@{}>", user_id)
+}
+
+pub fn post_container(
+    header: String,
+    body: &str,
+    trailer: &str,
+    gallery: MediaGallery,
+    user_id: serenity::UserId,
+    accent: u32,
+) -> (
+    Vec<serenity::CreateAttachment<'static>>,
+    serenity::CreateContainer<'static>,
+) {
+    let footer = sent_by_footer(user_id);
+    let mut content = header;
+    if !body.is_empty() {
+        if !content.is_empty() {
+            content.push('\n');
+        }
+        let used = utf16_len(&content) + utf16_len(trailer) + utf16_len(&footer);
+        content.push_str(&truncate_text(
+            body,
+            DISCORD_MAX_TEXT_CHARS.saturating_sub(used),
+        ));
+    }
+    content.push_str(trailer);
+
+    let mut components = Vec::new();
+    if !content.is_empty() {
+        components.push(serenity::CreateContainerComponent::TextDisplay(
+            serenity::CreateTextDisplay::new(content),
+        ));
+    }
+    if !gallery.items.is_empty() {
+        components.push(serenity::CreateContainerComponent::MediaGallery(
+            serenity::CreateMediaGallery::new(gallery.items),
+        ));
+    }
+    components.push(serenity::CreateContainerComponent::TextDisplay(
+        serenity::CreateTextDisplay::new(footer),
+    ));
+
+    let container = serenity::CreateContainer::new(components).accent_color(accent);
+    (gallery.attachments, container)
+}
+
+fn utf16_len(text: &str) -> usize {
+    text.encode_utf16().count()
+}
+
+pub fn truncate_text(text: &str, max: usize) -> String {
+    if utf16_len(text) <= max {
+        return text.to_string();
+    }
+
+    let budget = max.saturating_sub(1);
+    let mut used = 0;
+    let mut cut = 0;
+    for (i, c) in text.char_indices() {
+        used += c.len_utf16();
+        if used > budget {
+            break;
+        }
+        cut = i + c.len_utf8();
+    }
+
+    let head = &text[..cut];
+    let head = if text[cut..].starts_with(char::is_whitespace) {
+        head.trim_end()
+    } else if let Some(i) = head.rfind(char::is_whitespace).filter(|&i| i > 0) {
+        head[..i].trim_end()
+    } else {
+        head.trim_end_matches('\\')
+    };
+    format!("{}…", head)
 }
 
 pub async fn mp4_to_gif(data: Vec<u8>) -> Option<Vec<u8>> {

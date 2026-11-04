@@ -32,6 +32,7 @@ pub const MAX_FILE_CHARS: usize = 1700;
 
 pub const DISCORD_MAX_UPLOAD_BYTES: usize = 10 * 1024 * 1024;
 pub const DISCORD_MAX_TEXT_CHARS: usize = 4000;
+pub const DISCORD_MAX_GALLERY_ITEMS: usize = 10;
 pub const GIF_MAX_UPLOAD_BYTES: usize = 9 * 1024 * 1024;
 pub const GIF_MAX_WIDTH: u32 = 480;
 pub const GIF_FPS: u32 = 15;

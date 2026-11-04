@@ -1,4 +1,4 @@
-use super::shared::{self, SettingCheck};
+use super::shared::{self, MediaGallery, SettingCheck};
 use super::streamable_handler::{self, Media, StreamableError, StreamablePost};
 use crate::constants::{FAILURE_FETCH, STREAMABLE_ACCENT_COLOR, STREAMABLE_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
@@ -16,47 +16,24 @@ pub async fn build_container(
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let mut components: Vec<serenity::CreateContainerComponent<'static>> = Vec::new();
-    if !post.title.is_empty() {
-        components.push(serenity::CreateContainerComponent::TextDisplay(
-            serenity::CreateTextDisplay::new(format!("**{}**", post.title)),
-        ));
-    }
-
-    let mut attachments = Vec::new();
-    let gallery_url = match &post.media {
-        Media::Attach(video_url) => {
-            match shared::download_media(video_url, STREAMABLE_DOWNLOAD_UA).await {
-                Some(data) => {
-                    let filename = shared::media_filename("streamable", 0, video_url, Some("mp4"));
-                    let attachment_url = format!("attachment://{}", filename);
-                    attachments.push(serenity::CreateAttachment::bytes(data, filename));
-                    Some(attachment_url)
-                }
-                None => {
-                    warn!("Failed to download Streamable video: {}", video_url);
-                    None
-                }
-            }
-        }
-        Media::Stream(video_url) => Some(video_url.clone()),
+    let header = if post.title.is_empty() {
+        String::new()
+    } else {
+        format!("**{}**", post.title)
     };
 
-    if let Some(url) = gallery_url {
-        components.push(serenity::CreateContainerComponent::MediaGallery(
-            serenity::CreateMediaGallery::new(vec![serenity::CreateMediaGalleryItem::new(
-                serenity::CreateUnfurledMediaItem::new(url),
-            )]),
-        ));
+    let mut gallery = MediaGallery::default();
+    match &post.media {
+        Media::Attach(video_url) => {
+            let filename = shared::media_filename("streamable", 0, video_url, Some("mp4"));
+            gallery
+                .add(video_url, STREAMABLE_DOWNLOAD_UA, filename)
+                .await;
+        }
+        Media::Stream(video_url) => gallery.link(video_url),
     }
 
-    components.push(serenity::CreateContainerComponent::TextDisplay(
-        serenity::CreateTextDisplay::new(format!("-# Sent by <@{}>", user_id)),
-    ));
-
-    let container =
-        serenity::CreateContainer::new(components).accent_color(STREAMABLE_ACCENT_COLOR);
-    (attachments, container)
+    shared::post_container(header, "", "", gallery, user_id, STREAMABLE_ACCENT_COLOR)
 }
 
 pub async fn handle_streamable_links(

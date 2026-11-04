@@ -1,5 +1,5 @@
 use super::bsky_handler::{self, BskyPost};
-use super::shared::{self, SettingCheck};
+use super::shared::{self, MediaGallery, SettingCheck};
 use crate::constants::{BSKY_ACCENT_COLOR, BSKY_DOWNLOAD_UA, FAILURE_FETCH};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
@@ -16,62 +16,40 @@ pub async fn build_container(
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let mut content = if post.author == post.handle {
+    let header = if post.author == post.handle {
         format!("**@{}**", post.handle)
     } else {
         format!("**{}** (@{})", post.author, post.handle)
     };
 
-    if !post.text.is_empty() {
-        content.push_str(&format!("\n{}", post.text));
-    }
-
+    let mut trailer = String::new();
     if let Some((title, uri)) = &post.external {
-        content.push_str(&format!("\n\n[{}]({})", title, uri));
+        trailer.push_str(&format!("\n\n[{}]({})", title, uri));
     }
-
     if let Some(quote_author) = &post.quote_author {
         let quoted = post
             .quote_text
             .as_deref()
             .unwrap_or("")
             .replace('\n', "\n> ");
-        content.push_str(&format!("\n\n> **{}**\n> {}", quote_author, quoted));
+        trailer.push_str(&format!("\n\n> **{}**\n> {}", quote_author, quoted));
     }
 
-    let mut components: Vec<serenity::CreateContainerComponent<'static>> =
-        vec![serenity::CreateContainerComponent::TextDisplay(
-            serenity::CreateTextDisplay::new(content),
-        )];
-
-    let mut attachments = Vec::new();
-    let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
-    for (i, item) in post.media.iter().take(10).enumerate() {
-        let Some(data) = shared::download_media(&item.url, BSKY_DOWNLOAD_UA).await else {
-            warn!("Failed to download media: {}", item.url);
-            continue;
-        };
+    let mut gallery = MediaGallery::default();
+    for (i, item) in post.media.iter().enumerate() {
         let ext = item.is_video.then_some("mp4");
         let filename = shared::media_filename("bsky", i, &item.url, ext);
-        let attachment_url = format!("attachment://{}", filename);
-        attachments.push(serenity::CreateAttachment::bytes(data, filename));
-        gallery_items.push(serenity::CreateMediaGalleryItem::new(
-            serenity::CreateUnfurledMediaItem::new(attachment_url),
-        ));
+        gallery.add(&item.url, BSKY_DOWNLOAD_UA, filename).await;
     }
 
-    if !gallery_items.is_empty() {
-        components.push(serenity::CreateContainerComponent::MediaGallery(
-            serenity::CreateMediaGallery::new(gallery_items),
-        ));
-    }
-
-    components.push(serenity::CreateContainerComponent::TextDisplay(
-        serenity::CreateTextDisplay::new(format!("-# Sent by <@{}>", user_id)),
-    ));
-
-    let container = serenity::CreateContainer::new(components).accent_color(BSKY_ACCENT_COLOR);
-    (attachments, container)
+    shared::post_container(
+        header,
+        &post.text,
+        &trailer,
+        gallery,
+        user_id,
+        BSKY_ACCENT_COLOR,
+    )
 }
 
 pub async fn handle_bsky_links(
