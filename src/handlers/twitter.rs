@@ -21,10 +21,7 @@ fn is_twitter_url(word: &str) -> bool {
 }
 
 fn x_link(sigil: &str, name: &str, path: &str) -> String {
-    format!(
-        "[{sigil}{}](<https://x.com/{path}>)",
-        shared::escape_markdown(name)
-    )
+    format!("[{sigil}{name}](<https://x.com/{path}>)")
 }
 
 fn mention_link(username: &str) -> String {
