@@ -1,4 +1,4 @@
-use crate::constants::{BSKY_API_BASE, BSKY_HOSTS, BSKY_PLC_DIRECTORY};
+use crate::constants::{BSKY_API_BASE, BSKY_HOSTS, BSKY_PLC_DIRECTORY, BSKY_SENSITIVE_LABELS};
 use regex::Regex;
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -23,6 +23,7 @@ pub struct BskyPost {
     pub external: Option<(String, String)>,
     pub quote_author: Option<String>,
     pub quote_text: Option<String>,
+    pub sensitive: bool,
 }
 
 impl BskyPost {
@@ -86,6 +87,14 @@ impl BskyPost {
             .unwrap_or("")
             .to_string();
 
+        let sensitive = post
+            .get("labels")
+            .and_then(|l| l.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|l| l.get("val").and_then(|v| v.as_str()))
+            .any(|v| BSKY_SENSITIVE_LABELS.contains(&v));
+
         let embed = post.get("embed");
         let (media, external) = Self::parse_embed(embed, did);
         let (quote_author, quote_text) = Self::parse_quote(embed);
@@ -98,6 +107,7 @@ impl BskyPost {
             external,
             quote_author,
             quote_text,
+            sensitive,
         })
     }
 

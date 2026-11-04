@@ -486,6 +486,7 @@ pub struct MediaGallery {
     attachments: Vec<serenity::CreateAttachment<'static>>,
     items: Vec<serenity::CreateMediaGalleryItem<'static>>,
     remaining: usize,
+    spoiler: bool,
 }
 
 impl Default for MediaGallery {
@@ -494,6 +495,7 @@ impl Default for MediaGallery {
             attachments: Vec::new(),
             items: Vec::new(),
             remaining: DISCORD_MAX_UPLOAD_BYTES,
+            spoiler: false,
         }
     }
 }
@@ -546,10 +548,16 @@ impl MediaGallery {
         self.push_item(url.to_string());
     }
 
+    pub fn spoiler(mut self, spoiler: bool) -> Self {
+        self.spoiler = spoiler;
+        self
+    }
+
     fn push_item(&mut self, url: String) {
-        self.items.push(serenity::CreateMediaGalleryItem::new(
-            serenity::CreateUnfurledMediaItem::new(url),
-        ));
+        self.items.push(
+            serenity::CreateMediaGalleryItem::new(serenity::CreateUnfurledMediaItem::new(url))
+                .spoiler(self.spoiler),
+        );
     }
 }
 

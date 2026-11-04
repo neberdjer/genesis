@@ -1,11 +1,12 @@
 use super::shared::{self, MediaGallery, SettingCheck};
-use super::twitter_handler::{self, TwitterError, TwitterPost};
+use super::twitter_handler::{self, TwitterEntities, TwitterError, TwitterPoll, TwitterPost};
 use crate::constants::{
     FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA, TWITTER_MAX_QUOTE_CHARS,
 };
 use poise::serenity_prelude as serenity;
 use regex::Regex;
 use sqlx::PgPool;
+use std::fmt::Write as _;
 use std::sync::OnceLock;
 use tracing::{debug, warn};
 
@@ -19,12 +20,15 @@ fn is_twitter_url(word: &str) -> bool {
     twitter_handler::matches_twitter_host(word) && lower.contains("/status/")
 }
 
-fn mention_link(username: &str) -> String {
+fn x_link(sigil: &str, name: &str, path: &str) -> String {
     format!(
-        "[@{}](<https://x.com/{}>)",
-        shared::escape_markdown(username),
-        username
+        "[{sigil}{}](<https://x.com/{path}>)",
+        shared::escape_markdown(name)
     )
+}
+
+fn mention_link(username: &str) -> String {
+    x_link("@", username, username)
 }
 
 fn author_line(author: &str, username: &str) -> String {
@@ -35,26 +39,87 @@ fn author_line(author: &str, username: &str) -> String {
     )
 }
 
-fn render_text(text: &str, mentions: &[String]) -> String {
-    static MENTION_PATTERN: OnceLock<Regex> = OnceLock::new();
-    let pattern = MENTION_PATTERN.get_or_init(|| Regex::new(r"\B@([A-Za-z0-9_]{1,15})\b").unwrap());
+fn contains_tag(list: &[String], name: &str) -> bool {
+    let name = name.to_lowercase();
+    list.iter().any(|t| t.to_lowercase() == name)
+}
+
+fn entity_link(sigil: &str, name: &str, entities: &TwitterEntities) -> Option<String> {
+    let (sigil, list, path) = match sigil {
+        "@" if name.len() <= 15 && name.is_ascii() => ("@", &entities.mentions, name.to_string()),
+        "#" | "\u{ff03}" => (
+            "#",
+            &entities.hashtags,
+            format!("hashtag/{}", urlencoding::encode(name)),
+        ),
+        "$" => (
+            "$",
+            &entities.cashtags,
+            format!("search?q=%24{}", urlencoding::encode(name)),
+        ),
+        _ => return None,
+    };
+    contains_tag(list, name).then(|| x_link(sigil, name, &path))
+}
+
+fn render_text(text: &str, entities: &TwitterEntities) -> String {
+    static ENTITY_PATTERN: OnceLock<Regex> = OnceLock::new();
+    let pattern = ENTITY_PATTERN
+        .get_or_init(|| Regex::new(r"\B([@#\x{ff03}$])([\p{L}\p{M}\p{N}_]+)").unwrap());
 
     shared::map_outside_urls(text, |segment| {
         let mut out = String::with_capacity(segment.len());
         let mut last = 0;
         for caps in pattern.captures_iter(segment) {
-            let name = &caps[1];
-            if !mentions.iter().any(|m| m.eq_ignore_ascii_case(name)) {
+            let Some(link) = entity_link(&caps[1], &caps[2], entities) else {
                 continue;
-            }
+            };
             let whole = caps.get(0).unwrap();
             out.push_str(&shared::escape_markdown(&segment[last..whole.start()]));
-            out.push_str(&mention_link(name));
+            out.push_str(&link);
             last = whole.end();
         }
         out.push_str(&shared::escape_markdown(&segment[last..]));
         out
     })
+}
+
+fn format_count(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn poll_block(poll: &TwitterPoll) -> String {
+    let total: u64 = poll.choices.iter().map(|(_, count)| count).sum();
+    let mut block = String::from("\n");
+    for (label, count) in &poll.choices {
+        let percent = if total == 0 {
+            0.0
+        } else {
+            *count as f64 * 100.0 / total as f64
+        };
+        let _ = write!(
+            block,
+            "\n`{:>5.1}%` {}",
+            percent,
+            shared::escape_markdown(label)
+        );
+    }
+    let votes = if total == 1 { "vote" } else { "votes" };
+    let status = match (poll.is_final, poll.ends_at) {
+        (true, _) => "Final results".to_string(),
+        (false, Some(ends)) => format!("Ends <t:{}:R>", ends),
+        (false, None) => "Open".to_string(),
+    };
+    let _ = write!(block, "\n-# {} {} · {}", format_count(total), votes, status);
+    block
 }
 
 pub async fn build_container(
@@ -65,6 +130,9 @@ pub async fn build_container(
     serenity::CreateContainer<'static>,
 ) {
     let mut header = author_line(&post.author, &post.username);
+    if let Some(created_at) = post.created_at {
+        let _ = write!(header, " · <t:{}:R>", created_at);
+    }
     if !post.replying_to.is_empty() {
         let names = post
             .replying_to
@@ -77,7 +145,7 @@ pub async fn build_container(
 
     let quote_block = match (&post.quote_author, &post.quote_username, &post.quote_text) {
         (Some(quote_author), Some(quote_username), Some(quote_text)) => {
-            let quoted = render_text(quote_text, &post.quote_mentions).replace('\n', "\n> ");
+            let quoted = render_text(quote_text, &post.quote_entities).replace('\n', "\n> ");
             format!(
                 "\n\n> {}\n> {}",
                 author_line(quote_author, quote_username),
@@ -86,8 +154,9 @@ pub async fn build_container(
         }
         _ => String::new(),
     };
+    let trailer = post.poll.as_ref().map(poll_block).unwrap_or_default() + &quote_block;
 
-    let mut gallery = MediaGallery::default();
+    let mut gallery = MediaGallery::default().spoiler(post.sensitive);
     for (i, item) in post.media.iter().enumerate() {
         let Some(data) = gallery.fetch(&item.url, TWITTER_DOWNLOAD_UA).await else {
             continue;
@@ -105,8 +174,8 @@ pub async fn build_container(
 
     shared::post_container(
         header,
-        &render_text(&post.text, &post.mentions),
-        &quote_block,
+        &render_text(&post.text, &post.entities),
+        &trailer,
         gallery,
         user_id,
         TWITTER_ACCENT_COLOR,

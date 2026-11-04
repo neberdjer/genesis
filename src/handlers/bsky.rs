@@ -31,7 +31,7 @@ pub async fn build_container(
         );
     }
 
-    let mut gallery = MediaGallery::default();
+    let mut gallery = MediaGallery::default().spoiler(post.sensitive);
     for (i, item) in post.media.iter().enumerate() {
         let ext = item.is_video.then_some("mp4");
         let filename = shared::media_filename("bsky", i, &item.url, ext);

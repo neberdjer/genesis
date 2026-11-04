@@ -9,6 +9,12 @@ use tracing::debug;
 
 static TWITTER_PATTERN: OnceLock<Regex> = OnceLock::new();
 
+fn parse_timestamp(value: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|t| t.timestamp())
+}
+
 #[derive(Debug)]
 pub enum TwitterError {
     Deleted,
@@ -44,17 +50,33 @@ pub struct TwitterMedia {
     pub is_gif: bool,
 }
 
+#[derive(Default)]
+pub struct TwitterEntities {
+    pub mentions: Vec<String>,
+    pub hashtags: Vec<String>,
+    pub cashtags: Vec<String>,
+}
+
+pub struct TwitterPoll {
+    pub choices: Vec<(String, u64)>,
+    pub ends_at: Option<i64>,
+    pub is_final: bool,
+}
+
 pub struct TwitterPost {
     pub author: String,
     pub username: String,
     pub text: String,
     pub media: Vec<TwitterMedia>,
     pub replying_to: Vec<String>,
-    pub mentions: Vec<String>,
+    pub entities: TwitterEntities,
+    pub created_at: Option<i64>,
+    pub sensitive: bool,
+    pub poll: Option<TwitterPoll>,
     pub quote_author: Option<String>,
     pub quote_username: Option<String>,
     pub quote_text: Option<String>,
-    pub quote_mentions: Vec<String>,
+    pub quote_entities: TwitterEntities,
 }
 
 impl TwitterPost {
@@ -144,41 +166,41 @@ impl TwitterPost {
         let text = Self::substitute_tco_urls(&text, item);
 
         let replying_to = Self::reply_mentions(item, start);
-        let mentions = Self::mentions(item);
-        let quote_mentions = item
-            .get("quoted_tweet")
-            .map(Self::mentions)
-            .unwrap_or_default();
+        let quoted = item.get("quoted_tweet");
+        let entities = Self::entities(item);
+        let quote_entities = quoted.map(Self::entities).unwrap_or_default();
+        let created_at = Self::str_field(item, "created_at").and_then(parse_timestamp);
+        let sensitive = Self::is_sensitive(item) || quoted.is_some_and(Self::is_sensitive);
+        let poll = Self::poll(item);
 
         let mut media = Self::extract_media(item);
 
-        let (quote_author, quote_username, quote_text) =
-            if let Some(quoted) = item.get("quoted_tweet") {
-                let qauthor = quoted
-                    .get("user")
-                    .and_then(|u| u.get("name"))
-                    .and_then(|n| n.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let qusername = quoted
-                    .get("user")
-                    .and_then(|u| u.get("screen_name"))
-                    .and_then(|n| n.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let qtext = Self::tweet_text(quoted, Self::display_start(quoted));
-                let qtext = Self::substitute_tco_urls(&qtext, quoted);
+        let (quote_author, quote_username, quote_text) = if let Some(quoted) = quoted {
+            let qauthor = quoted
+                .get("user")
+                .and_then(|u| u.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
+            let qusername = quoted
+                .get("user")
+                .and_then(|u| u.get("screen_name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
+            let qtext = Self::tweet_text(quoted, Self::display_start(quoted));
+            let qtext = Self::substitute_tco_urls(&qtext, quoted);
 
-                media.extend(Self::extract_media(quoted));
+            media.extend(Self::extract_media(quoted));
 
-                if qauthor.is_empty() && qusername.is_empty() && qtext.is_empty() {
-                    (None, None, None)
-                } else {
-                    (Some(qauthor), Some(qusername), Some(qtext))
-                }
-            } else {
+            if qauthor.is_empty() && qusername.is_empty() && qtext.is_empty() {
                 (None, None, None)
-            };
+            } else {
+                (Some(qauthor), Some(qusername), Some(qtext))
+            }
+        } else {
+            (None, None, None)
+        };
 
         Ok(Self {
             author,
@@ -186,11 +208,14 @@ impl TwitterPost {
             text,
             media,
             replying_to,
-            mentions,
+            entities,
+            created_at,
+            sensitive,
+            poll,
             quote_author,
             quote_username,
             quote_text,
-            quote_mentions,
+            quote_entities,
         })
     }
 
@@ -218,30 +243,31 @@ impl TwitterPost {
             .unwrap_or(0) as usize
     }
 
-    fn user_mentions(entities: Option<&Value>) -> impl Iterator<Item = &Value> {
+    fn entity_list<'a>(entities: Option<&'a Value>, key: &str) -> impl Iterator<Item = &'a Value> {
         entities
-            .and_then(|e| e.get("user_mentions"))
+            .and_then(|e| e.get(key))
             .and_then(|m| m.as_array())
             .into_iter()
             .flatten()
     }
 
-    fn screen_name(mention: &Value) -> Option<String> {
-        mention
-            .get("screen_name")
-            .and_then(|s| s.as_str())
-            .map(String::from)
+    fn str_field<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+        value.get(key).and_then(|s| s.as_str())
+    }
+
+    fn card_binding<'a>(item: &'a Value, key: &str, kind: &str) -> Option<&'a Value> {
+        item.get("card")?.get("binding_values")?.get(key)?.get(kind)
     }
 
     fn reply_mentions(item: &Value, start: usize) -> Vec<String> {
-        let mut names: Vec<String> = Self::user_mentions(item.get("entities"))
+        let mut names: Vec<String> = Self::entity_list(item.get("entities"), "user_mentions")
             .filter(|m| {
                 m.get("indices")
                     .and_then(|i| i.get(1))
                     .and_then(|e| e.as_u64())
                     .is_some_and(|end| end as usize <= start)
             })
-            .filter_map(Self::screen_name)
+            .filter_map(|m| Self::str_field(m, "screen_name").map(String::from))
             .collect();
 
         if names.is_empty() {
@@ -255,12 +281,54 @@ impl TwitterPost {
         names
     }
 
-    fn mentions(item: &Value) -> Vec<String> {
-        let note_entities = item.get("note_tweet").and_then(|n| n.get("entity_set"));
-        Self::user_mentions(item.get("entities"))
-            .chain(Self::user_mentions(note_entities))
-            .filter_map(Self::screen_name)
-            .collect()
+    fn entities(item: &Value) -> TwitterEntities {
+        let sets = [
+            item.get("entities"),
+            item.get("note_tweet").and_then(|n| n.get("entity_set")),
+        ];
+        let collect = |keys: &[&str], field: &str| -> Vec<String> {
+            sets.iter()
+                .flat_map(|set| keys.iter().flat_map(|key| Self::entity_list(*set, key)))
+                .filter_map(|e| Self::str_field(e, field).map(String::from))
+                .collect()
+        };
+        TwitterEntities {
+            mentions: collect(&["user_mentions"], "screen_name"),
+            hashtags: collect(&["hashtags"], "text"),
+            cashtags: collect(&["symbols", "cashtags"], "text"),
+        }
+    }
+
+    fn is_sensitive(item: &Value) -> bool {
+        item.get("possibly_sensitive")
+            .and_then(|s| s.as_bool())
+            .unwrap_or(false)
+    }
+
+    fn poll(item: &Value) -> Option<TwitterPoll> {
+        if !Self::str_field(item.get("card")?, "name")?.starts_with("poll") {
+            return None;
+        }
+        let string = |key: &str| Self::card_binding(item, key, "string_value")?.as_str();
+        let choices: Vec<(String, u64)> = (1..=4)
+            .map_while(|i| {
+                let label = string(&format!("choice{i}_label"))?;
+                let count = string(&format!("choice{i}_count"))
+                    .and_then(|c| c.parse().ok())
+                    .unwrap_or(0);
+                Some((label.to_string(), count))
+            })
+            .collect();
+        if choices.is_empty() {
+            return None;
+        }
+        Some(TwitterPoll {
+            choices,
+            ends_at: string("end_datetime_utc").and_then(parse_timestamp),
+            is_final: Self::card_binding(item, "counts_are_final", "boolean_value")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        })
     }
 
     fn extract_media(item: &Value) -> Vec<TwitterMedia> {
@@ -303,11 +371,6 @@ impl TwitterPost {
     }
 
     fn extract_card_image(item: &Value) -> Option<String> {
-        let bindings = item
-            .get("card")
-            .and_then(|c| c.get("binding_values"))
-            .and_then(|b| b.as_object())?;
-
         const KEYS: &[&str] = &[
             "photo_image_full_size_original",
             "summary_photo_image_original",
@@ -316,17 +379,9 @@ impl TwitterPost {
             "thumbnail_image_original",
             "thumbnail_image_large",
         ];
-        for key in KEYS {
-            if let Some(url) = bindings
-                .get(*key)
-                .and_then(|v| v.get("image_value"))
-                .and_then(|iv| iv.get("url"))
-                .and_then(|u| u.as_str())
-            {
-                return Some(url.to_string());
-            }
-        }
-        None
+        KEYS.iter()
+            .find_map(|key| Self::str_field(Self::card_binding(item, key, "image_value")?, "url"))
+            .map(String::from)
     }
 
     fn pick_best_video_variant(media_detail: &Value) -> Option<String> {
