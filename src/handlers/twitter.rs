@@ -2,7 +2,9 @@ use super::shared::{self, SettingCheck};
 use super::twitter_handler::{self, TwitterError, TwitterPost};
 use crate::constants::{FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
 use poise::serenity_prelude as serenity;
+use regex::{Captures, Regex};
 use sqlx::PgPool;
+use std::sync::OnceLock;
 use tracing::{debug, warn};
 
 fn is_twitter_url(word: &str) -> bool {
@@ -15,6 +17,34 @@ fn is_twitter_url(word: &str) -> bool {
     twitter_handler::matches_twitter_host(word) && lower.contains("/status/")
 }
 
+fn mention_link(username: &str) -> String {
+    format!("[@{username}](<https://x.com/{username}>)")
+}
+
+fn author_line(author: &str, username: &str) -> String {
+    format!("**{author}** ({})", mention_link(username))
+}
+
+fn linkify_mentions(text: &str, mentions: &[String]) -> String {
+    static MENTION_PATTERN: OnceLock<Regex> = OnceLock::new();
+    let pattern = MENTION_PATTERN
+        .get_or_init(|| Regex::new(r"https?://\S+|\B@([A-Za-z0-9_]{1,15})\b").unwrap());
+
+    pattern
+        .replace_all(text, |caps: &Captures| {
+            if let Some(name) = caps.get(1)
+                && mentions
+                    .iter()
+                    .any(|m| m.eq_ignore_ascii_case(name.as_str()))
+            {
+                mention_link(name.as_str())
+            } else {
+                caps[0].to_string()
+            }
+        })
+        .into_owned()
+}
+
 pub async fn build_container(
     post: &TwitterPost,
     user_id: serenity::UserId,
@@ -22,23 +52,33 @@ pub async fn build_container(
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let mut content = format!("**{}** (@{})", post.author, post.username);
+    let mut content = author_line(&post.author, &post.username);
 
-    if let Some(replying_to) = &post.replying_to {
-        content.push_str(&format!("\nReplying to @{}", replying_to));
+    if !post.replying_to.is_empty() {
+        let names = post
+            .replying_to
+            .iter()
+            .map(|n| mention_link(n))
+            .collect::<Vec<_>>()
+            .join(" ");
+        content.push_str(&format!("\nReplying to {}", names));
     }
 
     if !post.text.is_empty() {
-        content.push_str(&format!("\n{}", post.text));
+        content.push_str(&format!(
+            "\n{}",
+            linkify_mentions(&post.text, &post.mentions)
+        ));
     }
 
     if let Some(quote_author) = &post.quote_author
         && let (Some(quote_username), Some(quote_text)) = (&post.quote_username, &post.quote_text)
     {
-        let quoted_lines = quote_text.replace('\n', "\n> ");
+        let quoted_lines = linkify_mentions(quote_text, &post.quote_mentions).replace('\n', "\n> ");
         content.push_str(&format!(
-            "\n\n> **{}** (@{})\n> {}",
-            quote_author, quote_username, quoted_lines
+            "\n\n> {}\n> {}",
+            author_line(quote_author, quote_username),
+            quoted_lines
         ));
     }
 

@@ -49,10 +49,12 @@ pub struct TwitterPost {
     pub username: String,
     pub text: String,
     pub media: Vec<TwitterMedia>,
-    pub replying_to: Option<String>,
+    pub replying_to: Vec<String>,
+    pub mentions: Vec<String>,
     pub quote_author: Option<String>,
     pub quote_username: Option<String>,
     pub quote_text: Option<String>,
+    pub quote_mentions: Vec<String>,
 }
 
 impl TwitterPost {
@@ -137,13 +139,16 @@ impl TwitterPost {
             .unwrap_or("")
             .to_string();
 
-        let text = Self::tweet_text(item);
+        let start = Self::display_start(item);
+        let text = Self::tweet_text(item, start);
         let text = Self::substitute_tco_urls(&text, item);
 
-        let replying_to = item
-            .get("in_reply_to_screen_name")
-            .and_then(|s| s.as_str())
-            .map(|s| s.to_string());
+        let replying_to = Self::reply_mentions(item, start);
+        let mentions = Self::mentions(item);
+        let quote_mentions = item
+            .get("quoted_tweet")
+            .map(Self::mentions)
+            .unwrap_or_default();
 
         let mut media = Self::extract_media(item);
 
@@ -161,7 +166,7 @@ impl TwitterPost {
                     .and_then(|n| n.as_str())
                     .unwrap_or("")
                     .to_string();
-                let qtext = Self::tweet_text(quoted);
+                let qtext = Self::tweet_text(quoted, Self::display_start(quoted));
                 let qtext = Self::substitute_tco_urls(&qtext, quoted);
 
                 media.extend(Self::extract_media(quoted));
@@ -181,19 +186,81 @@ impl TwitterPost {
             text,
             media,
             replying_to,
+            mentions,
             quote_author,
             quote_username,
             quote_text,
+            quote_mentions,
         })
     }
 
-    fn tweet_text(item: &Value) -> String {
-        item.get("note_tweet")
+    fn tweet_text(item: &Value, start: usize) -> String {
+        let text = item.get("text").and_then(|t| t.as_str()).unwrap_or("");
+        let prefix = &text[..text
+            .char_indices()
+            .nth(start)
+            .map_or(text.len(), |(i, _)| i)];
+        let body = item
+            .get("note_tweet")
             .and_then(|n| n.get("text"))
             .and_then(|t| t.as_str())
-            .or_else(|| item.get("text").and_then(|t| t.as_str()))
-            .unwrap_or("")
+            .unwrap_or(text);
+        body.strip_prefix(prefix)
+            .unwrap_or(body)
+            .trim_start()
             .to_string()
+    }
+
+    fn display_start(item: &Value) -> usize {
+        item.get("display_text_range")
+            .and_then(|r| r.get(0))
+            .and_then(|s| s.as_u64())
+            .unwrap_or(0) as usize
+    }
+
+    fn user_mentions(entities: Option<&Value>) -> impl Iterator<Item = &Value> {
+        entities
+            .and_then(|e| e.get("user_mentions"))
+            .and_then(|m| m.as_array())
+            .into_iter()
+            .flatten()
+    }
+
+    fn screen_name(mention: &Value) -> Option<String> {
+        mention
+            .get("screen_name")
+            .and_then(|s| s.as_str())
+            .map(String::from)
+    }
+
+    fn reply_mentions(item: &Value, start: usize) -> Vec<String> {
+        let mut names: Vec<String> = Self::user_mentions(item.get("entities"))
+            .filter(|m| {
+                m.get("indices")
+                    .and_then(|i| i.get(1))
+                    .and_then(|e| e.as_u64())
+                    .is_some_and(|end| end as usize <= start)
+            })
+            .filter_map(Self::screen_name)
+            .collect();
+
+        if names.is_empty() {
+            names.extend(
+                item.get("in_reply_to_screen_name")
+                    .and_then(|s| s.as_str())
+                    .map(String::from),
+            );
+        }
+
+        names
+    }
+
+    fn mentions(item: &Value) -> Vec<String> {
+        let note_entities = item.get("note_tweet").and_then(|n| n.get("entity_set"));
+        Self::user_mentions(item.get("entities"))
+            .chain(Self::user_mentions(note_entities))
+            .filter_map(Self::screen_name)
+            .collect()
     }
 
     fn extract_media(item: &Value) -> Vec<TwitterMedia> {
