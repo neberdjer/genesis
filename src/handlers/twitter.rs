@@ -1,6 +1,9 @@
-use super::shared::{self, SettingCheck};
+use super::shared::{self, MediaDownload, SettingCheck};
 use super::twitter_handler::{self, TwitterError, TwitterPost};
-use crate::constants::{FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA};
+use crate::constants::{
+    DISCORD_MAX_TEXT_CHARS, DISCORD_MAX_UPLOAD_BYTES, FAILURE_FETCH, TWITTER_ACCENT_COLOR,
+    TWITTER_DOWNLOAD_UA, TWITTER_MAX_QUOTE_CHARS,
+};
 use poise::serenity_prelude as serenity;
 use regex::{Captures, Regex};
 use sqlx::PgPool;
@@ -17,32 +20,93 @@ fn is_twitter_url(word: &str) -> bool {
     twitter_handler::matches_twitter_host(word) && lower.contains("/status/")
 }
 
+const MARKDOWN_CHARS: &str = "\\*_~`|<>[]()#-";
+
 fn mention_link(username: &str) -> String {
-    format!("[@{username}](<https://x.com/{username}>)")
+    format!(
+        "[@{}](<https://x.com/{}>)",
+        escape_markdown(username),
+        username
+    )
+}
+
+fn escape_markdown(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if MARKDOWN_CHARS.contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn author_line(author: &str, username: &str) -> String {
-    format!("**{author}** ({})", mention_link(username))
+    format!(
+        "**{}** ({})",
+        escape_markdown(author),
+        mention_link(username)
+    )
 }
 
-fn linkify_mentions(text: &str, mentions: &[String]) -> String {
-    static MENTION_PATTERN: OnceLock<Regex> = OnceLock::new();
-    let pattern = MENTION_PATTERN
-        .get_or_init(|| Regex::new(r"https?://\S+|\B@([A-Za-z0-9_]{1,15})\b").unwrap());
+fn render_text(text: &str, mentions: &[String]) -> String {
+    static TOKEN_PATTERN: OnceLock<Regex> = OnceLock::new();
+    let pattern = TOKEN_PATTERN.get_or_init(|| {
+        Regex::new(&format!(
+            r"(?<url>https?://\S+)|\B@(?<name>[A-Za-z0-9_]{{1,15}})\b|[{}]",
+            regex::escape(MARKDOWN_CHARS)
+        ))
+        .unwrap()
+    });
 
     pattern
         .replace_all(text, |caps: &Captures| {
-            if let Some(name) = caps.get(1)
-                && mentions
-                    .iter()
-                    .any(|m| m.eq_ignore_ascii_case(name.as_str()))
-            {
-                mention_link(name.as_str())
-            } else {
-                caps[0].to_string()
+            if caps.name("url").is_some() {
+                return caps[0].to_string();
+            }
+            match caps.name("name") {
+                Some(name)
+                    if mentions
+                        .iter()
+                        .any(|m| m.eq_ignore_ascii_case(name.as_str())) =>
+                {
+                    mention_link(name.as_str())
+                }
+                _ => escape_markdown(&caps[0]),
             }
         })
         .into_owned()
+}
+
+fn utf16_len(text: &str) -> usize {
+    text.encode_utf16().count()
+}
+
+fn truncate_text(text: &str, max: usize) -> String {
+    if utf16_len(text) <= max {
+        return text.to_string();
+    }
+
+    let budget = max.saturating_sub(1);
+    let mut used = 0;
+    let mut cut = 0;
+    for (i, c) in text.char_indices() {
+        used += c.len_utf16();
+        if used > budget {
+            break;
+        }
+        cut = i + c.len_utf8();
+    }
+
+    let head = &text[..cut];
+    let head = if text[cut..].starts_with(char::is_whitespace) {
+        head.trim_end()
+    } else if let Some(i) = head.rfind(char::is_whitespace).filter(|&i| i > 0) {
+        head[..i].trim_end()
+    } else {
+        head.trim_end_matches('\\')
+    };
+    format!("{}…", head)
 }
 
 pub async fn build_container(
@@ -64,23 +128,31 @@ pub async fn build_container(
         content.push_str(&format!("\nReplying to {}", names));
     }
 
+    let quote_block = match (&post.quote_author, &post.quote_username, &post.quote_text) {
+        (Some(quote_author), Some(quote_username), Some(quote_text)) => {
+            let quoted = render_text(quote_text, &post.quote_mentions).replace('\n', "\n> ");
+            format!(
+                "\n\n> {}\n> {}",
+                author_line(quote_author, quote_username),
+                truncate_text(&quoted, TWITTER_MAX_QUOTE_CHARS)
+            )
+        }
+        _ => String::new(),
+    };
+
+    let footer = format!("-# Sent by <@{}>", user_id);
+
     if !post.text.is_empty() {
-        content.push_str(&format!(
-            "\n{}",
-            linkify_mentions(&post.text, &post.mentions)
+        content.push('\n');
+        let used = utf16_len(&content) + utf16_len(&quote_block) + utf16_len(&footer);
+        let body = render_text(&post.text, &post.mentions);
+        content.push_str(&truncate_text(
+            &body,
+            DISCORD_MAX_TEXT_CHARS.saturating_sub(used),
         ));
     }
 
-    if let Some(quote_author) = &post.quote_author
-        && let (Some(quote_username), Some(quote_text)) = (&post.quote_username, &post.quote_text)
-    {
-        let quoted_lines = linkify_mentions(quote_text, &post.quote_mentions).replace('\n', "\n> ");
-        content.push_str(&format!(
-            "\n\n> {}\n> {}",
-            author_line(quote_author, quote_username),
-            quoted_lines
-        ));
-    }
+    content.push_str(&quote_block);
 
     let mut components: Vec<serenity::CreateContainerComponent<'static>> =
         vec![serenity::CreateContainerComponent::TextDisplay(
@@ -89,21 +161,34 @@ pub async fn build_container(
 
     let mut attachments = Vec::new();
     let mut gallery_items: Vec<serenity::CreateMediaGalleryItem<'static>> = Vec::new();
+    let mut remaining = DISCORD_MAX_UPLOAD_BYTES;
     for (i, item) in post.media.iter().take(10).enumerate() {
-        let Some(data) = shared::download_media(&item.url, TWITTER_DOWNLOAD_UA).await else {
-            warn!("Failed to download media: {}", item.url);
-            continue;
-        };
+        let data =
+            match shared::download_media_capped(&item.url, TWITTER_DOWNLOAD_UA, remaining).await {
+                Some(MediaDownload::Data(data)) => data,
+                Some(MediaDownload::TooLarge) => {
+                    debug!("Media too large to attach, linking instead: {}", item.url);
+                    gallery_items.push(serenity::CreateMediaGalleryItem::new(
+                        serenity::CreateUnfurledMediaItem::new(item.url.clone()),
+                    ));
+                    continue;
+                }
+                None => {
+                    warn!("Failed to download media: {}", item.url);
+                    continue;
+                }
+            };
 
         let (data, ext) = if item.is_gif {
             match shared::mp4_to_gif(data.clone()).await {
-                Some(gif) => (gif, Some("gif")),
-                None => (data, Some("mp4")),
+                Some(gif) if gif.len() <= remaining => (gif, Some("gif")),
+                _ => (data, Some("mp4")),
             }
         } else {
             (data, None)
         };
 
+        remaining -= data.len();
         let filename = shared::media_filename("twitter", i, &item.url, ext);
         let attachment_url = format!("attachment://{}", filename);
         attachments.push(serenity::CreateAttachment::bytes(data, filename));
@@ -119,7 +204,7 @@ pub async fn build_container(
     }
 
     components.push(serenity::CreateContainerComponent::TextDisplay(
-        serenity::CreateTextDisplay::new(format!("-# Sent by <@{}>", user_id)),
+        serenity::CreateTextDisplay::new(footer),
     ));
 
     let container = serenity::CreateContainer::new(components).accent_color(TWITTER_ACCENT_COLOR);

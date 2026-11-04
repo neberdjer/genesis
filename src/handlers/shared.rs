@@ -445,14 +445,43 @@ pub fn media_filename(prefix: &str, index: usize, url: &str, ext_override: Optio
     format!("{}_{}.{}", prefix, index, ext)
 }
 
+pub enum MediaDownload {
+    Data(Vec<u8>),
+    TooLarge,
+}
+
 pub async fn download_media(url: &str, user_agent: &str) -> Option<Vec<u8>> {
+    match download_media_capped(url, user_agent, usize::MAX).await? {
+        MediaDownload::Data(bytes) => Some(bytes),
+        MediaDownload::TooLarge => None,
+    }
+}
+
+pub async fn download_media_capped(
+    url: &str,
+    user_agent: &str,
+    max_bytes: usize,
+) -> Option<MediaDownload> {
     let url = url.to_string();
     let user_agent = user_agent.to_string();
     tokio::task::spawn_blocking(move || {
         let response = ureq::get(&url).set("User-Agent", &user_agent).call().ok()?;
+        let declared = response
+            .header("Content-Length")
+            .and_then(|len| len.parse::<usize>().ok());
+        if declared.is_some_and(|len| len > max_bytes) {
+            return Some(MediaDownload::TooLarge);
+        }
         let mut bytes = Vec::new();
-        response.into_reader().read_to_end(&mut bytes).ok()?;
-        Some(bytes)
+        response
+            .into_reader()
+            .take((max_bytes as u64).saturating_add(1))
+            .read_to_end(&mut bytes)
+            .ok()?;
+        if bytes.len() > max_bytes {
+            return Some(MediaDownload::TooLarge);
+        }
+        Some(MediaDownload::Data(bytes))
     })
     .await
     .ok()?

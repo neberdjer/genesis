@@ -1,5 +1,5 @@
 use crate::constants::{
-    FAILURE_DELETED, FAILURE_PROCESSING, STREAMABLE_HOSTS, STREAMABLE_MAX_UPLOAD_BYTES,
+    DISCORD_MAX_UPLOAD_BYTES, FAILURE_DELETED, FAILURE_PROCESSING, STREAMABLE_HOSTS,
 };
 use regex::Regex;
 use serde::Deserialize;
@@ -105,7 +105,7 @@ impl StreamablePost {
     }
 
     fn pick_file(files: &Files) -> Option<Media> {
-        let cap = STREAMABLE_MAX_UPLOAD_BYTES as u64;
+        let cap = DISCORD_MAX_UPLOAD_BYTES as u64;
         let fits = |file: &StreamableFile| file.size.is_none_or(|size| size <= cap);
 
         let mut fallback = None;

@@ -30,6 +30,8 @@ pub const MAX_DIFF_FETCH_BYTES: usize = 10 * 1024 * 1024;
 pub const SPACES_PER_TAB: &str = "    ";
 pub const MAX_FILE_CHARS: usize = 1700;
 
+pub const DISCORD_MAX_UPLOAD_BYTES: usize = 10 * 1024 * 1024;
+pub const DISCORD_MAX_TEXT_CHARS: usize = 4000;
 pub const GIF_MAX_UPLOAD_BYTES: usize = 9 * 1024 * 1024;
 pub const GIF_MAX_WIDTH: u32 = 480;
 pub const GIF_FPS: u32 = 15;
@@ -79,6 +81,7 @@ pub const TIMEZONE_REGISTER_URL: &str = "https://timezone.creations.works/";
 
 pub const INSTAGRAM_ACCENT_COLOR: u32 = 0xE4405F;
 pub const TWITTER_ACCENT_COLOR: u32 = 0x1DA1F2;
+pub const TWITTER_MAX_QUOTE_CHARS: usize = 1000;
 pub const TIKTOK_ACCENT_COLOR: u32 = 0x000000;
 pub const BSKY_ACCENT_COLOR: u32 = 0x1185FE;
 
@@ -108,7 +111,6 @@ pub const BSKY_HOSTS: &[&str] = &[
 pub const STREAMABLE_ACCENT_COLOR: u32 = 0x0F90FA;
 pub const STREAMABLE_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
 pub const STREAMABLE_HOSTS: &[&str] = &["streamable.com"];
-pub const STREAMABLE_MAX_UPLOAD_BYTES: usize = 10 * 1024 * 1024;
 
 pub const RATE_LIMIT_SECONDS: u64 = 10;
 pub const MAX_RATE_LIMIT_ENTRIES: usize = 10_000;
