@@ -1,11 +1,12 @@
 use crate::constants::{
     DISCORD_MAX_GALLERY_ITEMS, DISCORD_MAX_TEXT_CHARS, DISCORD_MAX_UPLOAD_BYTES,
-    EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS, FAILED_EMBED_REACTION, FAILURE_DELETED,
-    FAILURE_FETCH, FAILURE_NO_PERMS, FAILURE_NOT_TEXT, FAILURE_OUT_OF_RANGE, FAILURE_PROCESSING,
-    FAILURE_RATE_LIMITED, FAILURE_SEND, FAILURE_TOO_LARGE, FAILURE_TOO_LONG, FAILURE_UNAVAILABLE,
-    HANDLED_MESSAGE_TTL_SECONDS, MAX_FAILURE_DETAIL_CHARS, MAX_HANDLED_MESSAGE_ENTRIES,
-    MAX_RATE_LIMIT_ENTRIES, MAX_REPORT_DEDUP_ENTRIES, META_REPORT_CHANNEL, RATE_LIMIT_SECONDS,
-    REPORT_DEDUP_SECONDS,
+    DISCORD_MESSAGE_LIMIT, EMBED_SUPPRESS_DELAY_MS, EMBED_SUPPRESS_RETRY_DELAY_MS,
+    FAILED_EMBED_REACTION, FAILURE_DELETED, FAILURE_FETCH, FAILURE_NO_PERMS, FAILURE_NOT_TEXT,
+    FAILURE_OUT_OF_RANGE, FAILURE_PROCESSING, FAILURE_RATE_LIMITED, FAILURE_SEND,
+    FAILURE_TOO_LARGE, FAILURE_TOO_LONG, FAILURE_UNAVAILABLE, HANDLED_MESSAGE_TTL_SECONDS,
+    MAX_FAILURE_DETAIL_CHARS, MAX_HANDLED_MESSAGE_ENTRIES, MAX_RATE_LIMIT_ENTRIES,
+    MAX_REPORT_DEDUP_ENTRIES, META_REPORT_CHANNEL, RATE_LIMIT_SECONDS, REPORT_DEDUP_SECONDS,
+    TRUNCATED_MESSAGE_LIMIT,
 };
 use crate::db;
 use poise::serenity_prelude as serenity;
@@ -613,8 +614,44 @@ pub fn author_header(author: &str, handle: &str) -> String {
     }
 }
 
+const SENT_BY_PREFIX: &str = "-# Sent by <@";
+
 pub fn sent_by_footer(user_id: serenity::UserId) -> String {
-    format!("-# Sent by <@{}>", user_id)
+    format!("{SENT_BY_PREFIX}{user_id}>")
+}
+
+pub fn extract_sent_by_footer(content: &str) -> Option<&str> {
+    let start = content.rfind(&format!("\n{SENT_BY_PREFIX}"))?;
+    let rest = &content[start..];
+    let end = rest.find('>')?;
+    Some(&rest[..=end])
+}
+
+pub fn try_with_sent_by(page: &str, user_id: serenity::UserId) -> Option<String> {
+    let footer = sent_by_footer(user_id);
+    (page.len() + footer.len() < DISCORD_MESSAGE_LIMIT).then(|| format!("{page}\n{footer}"))
+}
+
+pub fn with_sent_by(response: String, user_id: serenity::UserId) -> String {
+    let footer = format!("\n{}", sent_by_footer(user_id));
+    let max_body = DISCORD_MESSAGE_LIMIT - footer.len();
+    if response.len() <= max_body {
+        return response + &footer;
+    }
+    let truncate_at = TRUNCATED_MESSAGE_LIMIT.min(max_body.saturating_sub(30));
+    let truncate_at = floor_char_boundary(&response, truncate_at);
+    format!(
+        "{}...\n```\n(Content too long){}",
+        &response[..truncate_at],
+        footer
+    )
+}
+
+pub fn template_block(template: &str) -> String {
+    if template.trim().is_empty() {
+        return "None".to_string();
+    }
+    format!("\n```\n{}\n```", escape_code_block(template))
 }
 
 pub fn post_container(

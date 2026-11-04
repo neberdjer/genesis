@@ -1,7 +1,5 @@
 use super::deny;
-use crate::constants::{
-    DISCORD_MESSAGE_LIMIT, FAILURE_FETCH, FAILURE_TOO_LONG, TRUNCATED_MESSAGE_LIMIT,
-};
+use crate::constants::{FAILURE_FETCH, FAILURE_TOO_LONG};
 use crate::handlers::file_pages;
 use crate::handlers::git_diff_handler::CommitDiff;
 use crate::handlers::git_diffs;
@@ -88,16 +86,7 @@ async fn send_file(ctx: Context<'_>, link: GitFileLink, only_me: bool) -> Result
         }
     };
 
-    let footer = format!("\n-# Sent by <@{}>", ctx.author().id);
-    let max_body = DISCORD_MESSAGE_LIMIT - footer.len();
-    let body = if response.len() <= max_body {
-        response
-    } else {
-        let truncate_at = TRUNCATED_MESSAGE_LIMIT.min(max_body.saturating_sub(30));
-        let truncate_at = shared::floor_char_boundary(&response, truncate_at);
-        format!("{}...\n```\n(Content too long)", &response[..truncate_at])
-    };
-    let content = format!("{}{}", body, footer);
+    let content = shared::with_sent_by(response, ctx.author().id);
 
     ctx.send(
         CreateReply::default()
@@ -116,8 +105,7 @@ async fn send_pages(
     first_page: &str,
     buttons: Option<serenity::CreateActionRow<'_>>,
 ) -> Result<(), Error> {
-    let footer = format!("\n-# Sent by <@{}>", ctx.author().id);
-    if first_page.len() + footer.len() > DISCORD_MESSAGE_LIMIT {
+    let Some(content) = shared::try_with_sent_by(first_page, ctx.author().id) else {
         shared::report_failure(
             ctx.serenity_context(),
             ctx.guild_id(),
@@ -127,9 +115,8 @@ async fn send_pages(
             "first page exceeds the message limit",
         );
         return deny(ctx, "Response too long to display.").await;
-    }
+    };
 
-    let content = format!("{}{}", first_page, footer);
     let mut reply = CreateReply::default()
         .content(content)
         .allowed_mentions(serenity::CreateAllowedMentions::new());

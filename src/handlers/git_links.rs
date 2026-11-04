@@ -1,7 +1,7 @@
 use super::file_pages;
 use super::git_handler::{FileResponse, GitError, GitFileLink};
 use super::shared::{self, SettingCheck};
-use crate::constants::{DISCORD_MESSAGE_LIMIT, FAILURE_FETCH, TRUNCATED_MESSAGE_LIMIT};
+use crate::constants::FAILURE_FETCH;
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use tracing::warn;
@@ -23,16 +23,7 @@ async fn send_code_snippet(
     msg: &serenity::Message,
     response: String,
 ) -> Result<(), &'static str> {
-    let footer = format!("\n-# Sent by <@{}>", msg.author.id);
-    let max_body = DISCORD_MESSAGE_LIMIT - footer.len();
-    let body = if response.len() <= max_body {
-        response
-    } else {
-        let truncate_at = TRUNCATED_MESSAGE_LIMIT.min(max_body.saturating_sub(30));
-        let truncate_at = shared::floor_char_boundary(&response, truncate_at);
-        format!("{}...\n```\n(Content too long)", &response[..truncate_at])
-    };
-    let content = format!("{}{}", body, footer);
+    let content = shared::with_sent_by(response, msg.author.id);
 
     let reply = serenity::CreateMessage::new()
         .content(content)

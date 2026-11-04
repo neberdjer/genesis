@@ -1,5 +1,5 @@
 use crate::constants::{TOGGLEABLE_COMMANDS, TOGGLEABLE_SERVICES};
-use crate::handlers::shared::normalize_domain;
+use crate::handlers::shared::{self, normalize_domain};
 use crate::{Context, Error, db};
 use poise::serenity_prelude as serenity;
 
@@ -197,6 +197,7 @@ async fn block_domain(
         .ok_or("This command can only be used in a server.")?;
 
     let normalized = normalize_domain(&domain);
+    let shown = shared::escape_markdown(&normalized);
     if normalized.is_empty() || !normalized.contains('.') {
         ctx.say("Invalid domain. Provide something like `tiktok.com`.")
             .await?;
@@ -210,11 +211,8 @@ async fn block_domain(
         .unwrap_or(false);
 
     if already {
-        ctx.say(format!(
-            "**{}** is already blocked in this server.",
-            normalized
-        ))
-        .await?;
+        ctx.say(format!("**{shown}** is already blocked in this server."))
+            .await?;
         return Ok(());
     }
 
@@ -227,8 +225,7 @@ async fn block_domain(
     .await?;
 
     ctx.say(format!(
-        "**{}** has been blocked in this server. Subdomains are also blocked.",
-        normalized
+        "**{shown}** has been blocked in this server. Subdomains are also blocked."
     ))
     .await?;
     Ok(())
@@ -248,19 +245,16 @@ async fn unblock_domain(
     let pool = &ctx.data().pool;
     let removed = db::remove_guild_blocked_domain(pool, &guild_id.to_string(), &normalized).await?;
 
-    if removed {
-        ctx.say(format!(
-            "**{}** has been unblocked in this server.",
-            normalized
-        ))
-        .await?;
+    let outcome = if removed {
+        "has been unblocked in this server."
     } else {
-        ctx.say(format!(
-            "**{}** is not on this server's blocklist.",
-            normalized
-        ))
-        .await?;
-    }
+        "is not on this server's blocklist."
+    };
+    ctx.say(format!(
+        "**{}** {outcome}",
+        shared::escape_markdown(&normalized)
+    ))
+    .await?;
     Ok(())
 }
 
@@ -308,7 +302,7 @@ async fn blocked_domains(ctx: Context<'_>) -> Result<(), Error> {
     } else {
         let list = domains
             .iter()
-            .map(|d| format!("- {}", d))
+            .map(|d| format!("- {}", shared::escape_markdown(d)))
             .collect::<Vec<_>>()
             .join("\n");
         ctx.say(format!("**Blocked domains in this server:**\n{}", list))

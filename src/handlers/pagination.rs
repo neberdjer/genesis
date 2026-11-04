@@ -1,5 +1,5 @@
 use super::shared;
-use crate::constants::{DISCORD_MESSAGE_LIMIT, FAILURE_TOO_LONG, PAGE_CACHE_TTL_SECONDS};
+use crate::constants::{FAILURE_TOO_LONG, PAGE_CACHE_TTL_SECONDS};
 use poise::serenity_prelude as serenity;
 use std::time::Instant;
 use tracing::{error, warn};
@@ -49,8 +49,7 @@ pub async fn send_first_page(
     first_page: &str,
     buttons: Option<serenity::CreateActionRow<'_>>,
 ) -> Result<(), &'static str> {
-    let footer = format!("\n-# Sent by <@{}>", msg.author.id);
-    if first_page.len() + footer.len() > DISCORD_MESSAGE_LIMIT {
+    let Some(content) = shared::try_with_sent_by(first_page, msg.author.id) else {
         warn!("Paged response too long, skipping");
         shared::report_failure(
             ctx,
@@ -61,9 +60,8 @@ pub async fn send_first_page(
             "first page exceeds the message limit",
         );
         return Err(FAILURE_TOO_LONG);
-    }
+    };
 
-    let content = format!("{}{}", first_page, footer);
     let mut message_builder = serenity::CreateMessage::new()
         .content(content)
         .reference_message(msg)
@@ -92,21 +90,13 @@ pub async fn respond_ephemeral(
     let _ = interaction.create_response(&ctx.http, response).await;
 }
 
-fn extract_sent_by_footer(content: &str) -> Option<String> {
-    let marker = "\n-# Sent by <@";
-    let start = content.rfind(marker)?;
-    let rest = &content[start..];
-    let end = rest.find('>')?;
-    Some(rest[..=end].to_string())
-}
-
 pub async fn update_to_page(
     ctx: &serenity::Context,
     interaction: &serenity::ComponentInteraction,
     page_content: &str,
     buttons: serenity::CreateActionRow<'_>,
 ) {
-    let content = match extract_sent_by_footer(&interaction.message.content) {
+    let content = match shared::extract_sent_by_footer(&interaction.message.content) {
         Some(footer) => format!("{}{}", page_content, footer),
         None => page_content.to_string(),
     };

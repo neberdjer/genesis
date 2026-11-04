@@ -1,4 +1,5 @@
 use crate::db;
+use crate::handlers::shared;
 use crate::{Context, Error};
 use poise::serenity_prelude as serenity;
 
@@ -46,17 +47,18 @@ pub async fn goodbye(
         None => "Not set".to_string(),
     };
 
-    let response = if has_changes {
-        format!(
-            "**Goodbye Settings Updated**\nStatus: {}\nChannel: {}\nMessage: `{}`",
-            status, channel_display, settings.message
-        )
+    let (title, help) = if has_changes {
+        ("Goodbye Settings Updated", "")
     } else {
-        format!(
-            "**Goodbye Settings**\nStatus: {}\nChannel: {}\nMessage: `{}`\n\nPlaceholders: `{{server_name}}`, `{{username}}`, `{{member_count}}`\nI show the member's name instead of pinging them, since a ping would just show \"unknown user\".",
-            status, channel_display, settings.message
+        (
+            "Goodbye Settings",
+            "\n\nPlaceholders: `{server_name}`, `{username}`, `{member_count}`\nI show the member's name instead of pinging them, since a ping would just show \"unknown user\".",
         )
     };
+    let response = format!(
+        "**{title}**\nStatus: {status}\nChannel: {channel_display}\nMessage: {}{help}",
+        shared::template_block(&settings.message)
+    );
 
     ctx.say(response).await?;
 
