@@ -197,11 +197,7 @@ impl GitFileLink {
 
     fn file_name_from_path(path: &str) -> String {
         let decoded = urlencoding::decode(path).unwrap_or(std::borrow::Cow::Borrowed(path));
-        decoded
-            .rsplit('/')
-            .next()
-            .unwrap_or(&decoded)
-            .to_string()
+        decoded.rsplit('/').next().unwrap_or(&decoded).to_string()
     }
 
     pub fn fetch_content(
