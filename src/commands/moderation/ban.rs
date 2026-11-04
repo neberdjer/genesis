@@ -1,3 +1,4 @@
+use crate::handlers::shared;
 use crate::{Context, Error};
 use poise::serenity_prelude as serenity;
 use tracing::info;
@@ -84,6 +85,8 @@ pub async fn ban(
         return Ok(());
     }
 
+    let tag = shared::escape_markdown(&user.tag());
+
     match guild_id
         .ban(http, user.id, delete_days as u32, Some(ban_reason))
         .await
@@ -108,7 +111,7 @@ pub async fn ban(
                     Ok(_) => {
                         ctx.say(format!(
                             "**Softbanned** **{}** ({}).\n**Reason:** {}\n**Messages deleted:** {} {}",
-                            user.tag(),
+                            tag,
                             user.id,
                             ban_reason,
                             delete_days,
@@ -122,7 +125,7 @@ pub async fn ban(
                         tracing::warn!("Softban unban failed for {}: {}", user.tag(), e);
                         ctx.say(format!(
                             "**Banned** **{}** ({}), but the unban step of softban failed.\n**Reason:** {}",
-                            user.tag(),
+                            tag,
                             user.id,
                             ban_reason
                         ))
@@ -132,19 +135,14 @@ pub async fn ban(
             } else {
                 ctx.say(format!(
                     "**Banned** **{}** ({}).\n**Reason:** {}\n**Messages deleted:** {} {}",
-                    user.tag(),
-                    user.id,
-                    ban_reason,
-                    delete_days,
-                    day_word
+                    tag, user.id, ban_reason, delete_days, day_word
                 ))
                 .await?;
             }
         }
         Err(e) => {
             tracing::warn!("Failed to ban {}: {}", user.tag(), e);
-            ctx.say(format!("Failed to ban **{}**.", user.tag()))
-                .await?;
+            ctx.say(format!("Failed to ban **{}**.", tag)).await?;
         }
     }
 

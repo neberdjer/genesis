@@ -1,4 +1,4 @@
-use super::shared::is_safe_host;
+use super::shared::{escape_code_block, escape_markdown, floor_char_boundary, is_safe_host};
 use crate::constants::{
     FAILURE_NOT_TEXT, FAILURE_OUT_OF_RANGE, MAX_FILE_CHARS, MAX_FILE_FETCH_BYTES, SPACES_PER_TAB,
 };
@@ -369,12 +369,16 @@ impl GitFileLink {
 
         if self.start_line.is_some() {
             let extracted = self.extract_lines(&content).ok_or(GitError::OutOfRange)?;
-            return Ok(Some(FileResponse::Single(self.format_snippet(&extracted))));
+            return Ok(Some(FileResponse::Single(
+                self.format_snippet(&escape_code_block(&extracted)),
+            )));
         }
 
         if content.len() <= MAX_FILE_CHARS {
             let content = Self::unindent(&content);
-            return Ok(Some(FileResponse::Single(self.format_snippet(&content))));
+            return Ok(Some(FileResponse::Single(
+                self.format_snippet(&escape_code_block(&content)),
+            )));
         }
 
         Ok(Some(FileResponse::Paged(
@@ -382,7 +386,7 @@ impl GitFileLink {
         )))
     }
 
-    fn format_snippet(&self, extracted: &str) -> String {
+    fn format_snippet(&self, escaped: &str) -> String {
         let line_info = match (self.start_line, self.end_line) {
             (Some(start), Some(end)) if start == end => format!(" Line {}", start),
             (Some(start), Some(end)) => format!(" Lines {}-{}", start, end),
@@ -392,22 +396,20 @@ impl GitFileLink {
 
         format!(
             "**{}:**{}\n```{}\n{}\n```",
-            self.file_name,
+            escape_markdown(&self.file_name),
             line_info,
             self.get_language(),
-            extracted.replace("```", "`\\``")
+            escaped
         )
     }
 
     fn chunk_pages(&self, content: &str, truncated: bool) -> Vec<String> {
-        let escaped = content
-            .replace('\t', SPACES_PER_TAB)
-            .replace("```", "`\\``");
+        let escaped = escape_code_block(&content.replace('\t', SPACES_PER_TAB));
 
         let mut pages = Vec::new();
         let mut rest = escaped.as_str();
         while !rest.is_empty() {
-            let mut cut = super::shared::floor_char_boundary(rest, MAX_FILE_CHARS);
+            let mut cut = floor_char_boundary(rest, MAX_FILE_CHARS);
             if cut < rest.len()
                 && let Some(newline) = rest[..cut].rfind('\n')
                 && newline > 0

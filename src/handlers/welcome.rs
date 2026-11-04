@@ -96,13 +96,17 @@ pub async fn handle_member_join(
         return;
     }
 
-    let message = settings
-        .message
-        .replace("{server_name}", &guild_name)
-        .replace("{user}", &format!("<@{}>", member.user.id))
-        .replace("{mention}", &format!("<@{}>", member.user.id))
-        .replace("{username}", &member.user.name)
-        .replace("{member_count}", &member_count);
+    let mention = format!("<@{}>", member.user.id);
+    let message = shared::render_template(
+        &settings.message,
+        &[
+            ("server_name", &shared::escape_markdown(&guild_name)),
+            ("user", &mention),
+            ("mention", &mention),
+            ("username", &shared::escape_markdown(&member.user.name)),
+            ("member_count", &member_count),
+        ],
+    );
 
     let allowed_mentions =
         if settings.message.contains("{user}") || settings.message.contains("{mention}") {

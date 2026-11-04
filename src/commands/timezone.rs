@@ -85,7 +85,7 @@ pub async fn timezone(
 
     let target = user.as_ref().unwrap_or_else(|| ctx.author());
     let target_id = target.id;
-    let target_name = target.display_name().to_string();
+    let target_name = shared::escape_markdown(target.display_name());
     let caller_id = ctx.author().id;
 
     ctx.defer().await?;

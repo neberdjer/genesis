@@ -69,11 +69,14 @@ pub async fn handle_member_leave(
         .map(|g| g.member_count.to_string())
         .unwrap_or_else(|| "?".to_string());
 
-    let message = settings
-        .message
-        .replace("{server_name}", &guild_name)
-        .replace("{username}", &user.name)
-        .replace("{member_count}", &member_count);
+    let message = shared::render_template(
+        &settings.message,
+        &[
+            ("server_name", &shared::escape_markdown(&guild_name)),
+            ("username", &shared::escape_markdown(&user.name)),
+            ("member_count", &member_count),
+        ],
+    );
 
     let built_message = serenity::CreateMessage::new()
         .content(&message)

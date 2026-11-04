@@ -1,3 +1,4 @@
+use crate::handlers::shared;
 use crate::{Context, Error};
 use poise::serenity_prelude as serenity;
 use tracing::info;
@@ -72,6 +73,8 @@ pub async fn kick(
 
     let kick_reason = reason.as_deref().unwrap_or("No reason provided");
 
+    let tag = shared::escape_markdown(&user.tag());
+
     match guild_id.kick(ctx.http(), user.id, Some(kick_reason)).await {
         Ok(_) => {
             info!(
@@ -84,16 +87,13 @@ pub async fn kick(
 
             ctx.say(format!(
                 "**Kicked** **{}** ({}).\n**Reason:** {}",
-                user.tag(),
-                user.id,
-                kick_reason
+                tag, user.id, kick_reason
             ))
             .await?;
         }
         Err(e) => {
             tracing::warn!("Failed to kick {}: {}", user.tag(), e);
-            ctx.say(format!("Failed to kick **{}**.", user.tag()))
-                .await?;
+            ctx.say(format!("Failed to kick **{}**.", tag)).await?;
         }
     }
 

@@ -1,4 +1,4 @@
-use super::shared::is_safe_host;
+use super::shared::{escape_code_block, escape_markdown, is_safe_host};
 use crate::constants::{MAX_DIFF_CHARS_PER_FILE, MAX_DIFF_FETCH_BYTES};
 use regex::Regex;
 use std::sync::OnceLock;
@@ -445,9 +445,9 @@ impl CommitDiff {
 
             let response = format!(
                 "**{}** `{}`\n```diff\n{}\n```",
-                file_name,
+                escape_markdown(file_name),
                 stats,
-                file.changes.replace("```", "`\\``")
+                escape_code_block(&file.changes)
             );
 
             responses.push(response);

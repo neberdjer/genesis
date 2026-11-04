@@ -580,6 +580,23 @@ pub fn map_outside_urls(text: &str, mut f: impl FnMut(&str) -> String) -> String
     out
 }
 
+pub fn render_template(template: &str, values: &[(&str, &str)]) -> String {
+    static PLACEHOLDER: OnceLock<regex::Regex> = OnceLock::new();
+    let pattern = PLACEHOLDER.get_or_init(|| regex::Regex::new(r"\{(\w+)\}").unwrap());
+    pattern
+        .replace_all(template, |caps: &regex::Captures| {
+            values
+                .iter()
+                .find(|(key, _)| *key == &caps[1])
+                .map_or_else(|| caps[0].to_string(), |(_, value)| value.to_string())
+        })
+        .into_owned()
+}
+
+pub fn escape_code_block(text: &str) -> String {
+    text.replace("```", "`\\``")
+}
+
 pub fn escape_text(text: &str) -> String {
     map_outside_urls(text, escape_markdown)
 }
