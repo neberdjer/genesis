@@ -2,6 +2,7 @@ use super::shared::{self, MediaGallery, SettingCheck};
 use super::twitter_handler::{self, TwitterEntities, TwitterError, TwitterPoll, TwitterPost};
 use crate::constants::{
     FAILURE_FETCH, TWITTER_ACCENT_COLOR, TWITTER_DOWNLOAD_UA, TWITTER_MAX_QUOTE_CHARS,
+    TWITTER_POLL_BAR_WIDTH,
 };
 use poise::serenity_prelude as serenity;
 use regex::Regex;
@@ -93,20 +94,39 @@ fn format_count(n: u64) -> String {
     out
 }
 
+fn poll_bar(fraction: f64) -> String {
+    let halves = (fraction * (TWITTER_POLL_BAR_WIDTH * 2) as f64).round() as usize;
+    let full = halves / 2;
+    let half = halves % 2;
+    let mut bar = "\u{2588}".repeat(full);
+    if half == 1 {
+        bar.push('\u{258c}');
+    }
+    bar.push_str(&"\u{b7}".repeat(TWITTER_POLL_BAR_WIDTH - full - half));
+    bar
+}
+
 fn poll_block(poll: &TwitterPoll) -> String {
     let total: u64 = poll.choices.iter().map(|(_, count)| count).sum();
-    let mut block = String::from("\n");
+    let width = poll
+        .choices
+        .iter()
+        .map(|(label, _)| label.chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut block = String::from("\n```");
     for (label, count) in &poll.choices {
-        let percent = if total == 0 {
+        let fraction = if total == 0 {
             0.0
         } else {
-            *count as f64 * 100.0 / total as f64
+            *count as f64 / total as f64
         };
         let _ = write!(
             block,
-            "\n`{:>5.1}%` {}",
-            percent,
-            shared::escape_markdown(label)
+            "\n{:<width$}  {}  {:>5.1}%",
+            shared::escape_code_block(label),
+            poll_bar(fraction),
+            fraction * 100.0
         );
     }
     let votes = if total == 1 { "vote" } else { "votes" };
@@ -115,7 +135,13 @@ fn poll_block(poll: &TwitterPoll) -> String {
         (false, Some(ends)) => format!("Ends <t:{}:R>", ends),
         (false, None) => "Open".to_string(),
     };
-    let _ = write!(block, "\n-# {} {} · {}", format_count(total), votes, status);
+    let _ = write!(
+        block,
+        "\n```\n-# {} {} · {}",
+        format_count(total),
+        votes,
+        status
+    );
     block
 }
 

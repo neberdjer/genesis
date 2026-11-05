@@ -83,6 +83,7 @@ pub const TIMEZONE_REGISTER_URL: &str = "https://timezone.creations.works/";
 pub const INSTAGRAM_ACCENT_COLOR: u32 = 0xE4405F;
 pub const TWITTER_ACCENT_COLOR: u32 = 0x1DA1F2;
 pub const TWITTER_MAX_QUOTE_CHARS: usize = 1000;
+pub const TWITTER_POLL_BAR_WIDTH: usize = 20;
 pub const TIKTOK_ACCENT_COLOR: u32 = 0x000000;
 pub const BSKY_ACCENT_COLOR: u32 = 0x1185FE;
 
