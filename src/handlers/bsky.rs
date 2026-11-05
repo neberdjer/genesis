@@ -1,6 +1,8 @@
 use super::bsky_handler::{self, BskyPost};
 use super::shared::{self, MediaGallery, SettingCheck};
-use crate::constants::{BSKY_ACCENT_COLOR, BSKY_DOWNLOAD_UA, FAILURE_FETCH};
+use crate::constants::{
+    BSKY_ACCENT_COLOR, BSKY_DOWNLOAD_UA, BSKY_MAX_LINK_TITLE_CHARS, FAILURE_FETCH,
+};
 use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use std::fmt::Write as _;
@@ -19,7 +21,13 @@ pub async fn build_container(
 ) {
     let mut trailer = String::new();
     if let Some((title, uri)) = &post.external {
-        let _ = write!(trailer, "\n\n[{}]({})", shared::escape_markdown(title), uri);
+        let title = shared::truncate_text(title, BSKY_MAX_LINK_TITLE_CHARS);
+        let _ = write!(
+            trailer,
+            "\n\n[{}](<{}>)",
+            shared::escape_markdown(&title),
+            uri
+        );
     }
     if let Some(quote_author) = &post.quote_author {
         let quote = shared::escape_text(post.quote_text.as_deref().unwrap_or(""));

@@ -44,7 +44,7 @@ fn contains_tag(list: &[String], name: &str) -> bool {
 
 fn entity_link(sigil: &str, name: &str, entities: &TwitterEntities) -> Option<String> {
     let (sigil, list, path) = match sigil {
-        "@" if name.len() <= 15 && name.is_ascii() => ("@", &entities.mentions, name.to_string()),
+        "@" => ("@", &entities.mentions, name.to_string()),
         "#" | "\u{ff03}" => (
             "#",
             &entities.hashtags,
@@ -62,17 +62,29 @@ fn entity_link(sigil: &str, name: &str, entities: &TwitterEntities) -> Option<St
 
 fn render_text(text: &str, entities: &TwitterEntities) -> String {
     static ENTITY_PATTERN: OnceLock<Regex> = OnceLock::new();
-    let pattern = ENTITY_PATTERN
-        .get_or_init(|| Regex::new(r"\B([@#\x{ff03}$])([\p{L}\p{M}\p{N}_]+)").unwrap());
+    let pattern = ENTITY_PATTERN.get_or_init(|| {
+        Regex::new(r"\B(?:[@\x{ff20}]([A-Za-z0-9_]{1,15})|([#\x{ff03}$])([\p{L}\p{M}\p{N}_]+))")
+            .unwrap()
+    });
 
     shared::map_outside_urls(text, |segment| {
         let mut out = String::with_capacity(segment.len());
         let mut last = 0;
         for caps in pattern.captures_iter(segment) {
-            let Some(link) = entity_link(&caps[1], &caps[2], entities) else {
+            let whole = caps.get(0).unwrap();
+            let (sigil, name) = match caps.get(1) {
+                Some(name) => {
+                    let next = segment[whole.end()..].chars().next();
+                    if next.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_') {
+                        continue;
+                    }
+                    ("@", name.as_str())
+                }
+                None => (&caps[2], &caps[3]),
+            };
+            let Some(link) = entity_link(sigil, name, entities) else {
                 continue;
             };
-            let whole = caps.get(0).unwrap();
             out.push_str(&shared::escape_markdown(&segment[last..whole.start()]));
             out.push_str(&link);
             last = whole.end();
@@ -132,6 +144,7 @@ fn poll_block(poll: &TwitterPoll) -> String {
     let votes = if total == 1 { "vote" } else { "votes" };
     let status = match (poll.is_final, poll.ends_at) {
         (true, _) => "Final results".to_string(),
+        (false, Some(ends)) if ends <= chrono::Utc::now().timestamp() => "Ended".to_string(),
         (false, Some(ends)) => format!("Ends <t:{}:R>", ends),
         (false, None) => "Open".to_string(),
     };

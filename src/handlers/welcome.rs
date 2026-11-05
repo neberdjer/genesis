@@ -100,11 +100,11 @@ pub async fn handle_member_join(
     let message = shared::render_template(
         &settings.message,
         &[
-            ("server_name", &shared::escape_markdown(&guild_name)),
-            ("user", &mention),
-            ("mention", &mention),
-            ("username", &shared::escape_markdown(&member.user.name)),
-            ("member_count", &member_count),
+            ("server_name", &guild_name, true),
+            ("user", &mention, false),
+            ("mention", &mention, false),
+            ("username", &member.user.name, true),
+            ("member_count", &member_count, false),
         ],
     );
 

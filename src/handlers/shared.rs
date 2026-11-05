@@ -589,21 +589,27 @@ pub fn map_outside_urls(text: &str, mut f: impl FnMut(&str) -> String) -> String
     out
 }
 
-pub fn render_template(template: &str, values: &[(&str, &str)]) -> String {
+pub fn render_template(template: &str, values: &[(&str, &str, bool)]) -> String {
     static PLACEHOLDER: OnceLock<regex::Regex> = OnceLock::new();
     let pattern = PLACEHOLDER.get_or_init(|| regex::Regex::new(r"\{(\w+)\}").unwrap());
     pattern
         .replace_all(template, |caps: &regex::Captures| {
-            values
-                .iter()
-                .find(|(key, _)| *key == &caps[1])
-                .map_or_else(|| caps[0].to_string(), |(_, value)| value.to_string())
+            let Some((_, value, escape)) = values.iter().find(|(key, ..)| *key == &caps[1]) else {
+                return caps[0].to_string();
+            };
+            let start = caps.get(0).unwrap().start();
+            let in_code = template[..start].matches('`').count() % 2 == 1;
+            if *escape && !in_code {
+                escape_markdown(value)
+            } else {
+                value.to_string()
+            }
         })
         .into_owned()
 }
 
 pub fn escape_code_block(text: &str) -> String {
-    text.replace("```", "`\\``")
+    text.replace("``", "`\u{200b}`")
 }
 
 pub fn escape_text(text: &str) -> String {
@@ -641,10 +647,13 @@ pub fn try_with_sent_by(page: &str, user_id: serenity::UserId) -> Option<String>
 }
 
 pub fn with_sent_by(response: String, user_id: serenity::UserId) -> String {
-    let footer = format!("\n{}", sent_by_footer(user_id));
+    fit_with_footer(response, &format!("\n{}", sent_by_footer(user_id)))
+}
+
+pub fn fit_with_footer(response: String, footer: &str) -> String {
     let max_body = DISCORD_MESSAGE_LIMIT - footer.len();
     if response.len() <= max_body {
-        return response + &footer;
+        return response + footer;
     }
     let truncate_at = TRUNCATED_MESSAGE_LIMIT.min(max_body.saturating_sub(30));
     let truncate_at = floor_char_boundary(&response, truncate_at);
@@ -715,7 +724,10 @@ pub fn truncate_text(text: &str, max: usize) -> String {
         return text.to_string();
     }
 
-    let budget = max.saturating_sub(1);
+    if max == 0 {
+        return String::new();
+    }
+    let budget = max - 1;
     let mut used = 0;
     let mut cut = 0;
     for (i, c) in text.char_indices() {
@@ -732,9 +744,20 @@ pub fn truncate_text(text: &str, max: usize) -> String {
     } else if let Some(i) = head.rfind(char::is_whitespace).filter(|&i| i > 0) {
         head[..i].trim_end()
     } else {
-        head.trim_end_matches('\\')
+        strip_open_link(head).trim_end_matches('\\')
     };
+    let head = head.strip_suffix("\n>").unwrap_or(head);
     format!("{}…", head)
+}
+
+fn strip_open_link(text: &str) -> &str {
+    let unescaped_open = text.char_indices().rev().find(|&(i, c)| {
+        c == '[' && text[..i].chars().rev().take_while(|&b| b == '\\').count() % 2 == 0
+    });
+    match unescaped_open {
+        Some((i, _)) if !text[i..].contains(">)") => &text[..i],
+        _ => text,
+    }
 }
 
 pub async fn mp4_to_gif(data: Vec<u8>) -> Option<Vec<u8>> {

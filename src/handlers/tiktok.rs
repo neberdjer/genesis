@@ -23,11 +23,7 @@ pub async fn build_container(
     }
 
     shared::post_container(
-        format!(
-            "**{}** (@{})",
-            shared::escape_markdown(&post.author),
-            shared::escape_markdown(&post.username)
-        ),
+        shared::author_header(&post.author, &post.username),
         &shared::escape_text(&post.text),
         "",
         gallery,

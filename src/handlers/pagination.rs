@@ -96,10 +96,8 @@ pub async fn update_to_page(
     page_content: &str,
     buttons: serenity::CreateActionRow<'_>,
 ) {
-    let content = match shared::extract_sent_by_footer(&interaction.message.content) {
-        Some(footer) => format!("{}{}", page_content, footer),
-        None => page_content.to_string(),
-    };
+    let footer = shared::extract_sent_by_footer(&interaction.message.content).unwrap_or("");
+    let content = shared::fit_with_footer(page_content.to_string(), footer);
 
     let response = serenity::CreateInteractionResponse::UpdateMessage(
         serenity::CreateInteractionResponseMessage::new()

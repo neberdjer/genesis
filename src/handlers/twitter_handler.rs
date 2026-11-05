@@ -165,7 +165,7 @@ impl TwitterPost {
         let text = Self::tweet_text(item, start);
         let text = Self::substitute_tco_urls(&text, item);
 
-        let replying_to = Self::reply_mentions(item, start);
+        let replying_to = Self::reply_mentions(item, start, &username);
         let quoted = item.get("quoted_tweet");
         let entities = Self::entities(item);
         let quote_entities = quoted.map(Self::entities).unwrap_or_default();
@@ -259,7 +259,7 @@ impl TwitterPost {
         item.get("card")?.get("binding_values")?.get(key)?.get(kind)
     }
 
-    fn reply_mentions(item: &Value, start: usize) -> Vec<String> {
+    fn reply_mentions(item: &Value, start: usize, author: &str) -> Vec<String> {
         let mut names: Vec<String> = Self::entity_list(item.get("entities"), "user_mentions")
             .filter(|m| {
                 m.get("indices")
@@ -272,8 +272,8 @@ impl TwitterPost {
 
         if names.is_empty() {
             names.extend(
-                item.get("in_reply_to_screen_name")
-                    .and_then(|s| s.as_str())
+                Self::str_field(item, "in_reply_to_screen_name")
+                    .filter(|name| !name.eq_ignore_ascii_case(author))
                     .map(String::from),
             );
         }

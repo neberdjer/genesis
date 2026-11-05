@@ -102,6 +102,7 @@ pub const TWITTER_HOSTS: &[&str] = &[
 pub const BSKY_DOWNLOAD_UA: &str = "Mozilla/5.0 (compatible; GenesisBot/1.0)";
 pub const BSKY_API_BASE: &str = "https://public.api.bsky.app";
 pub const BSKY_PLC_DIRECTORY: &str = "https://plc.directory";
+pub const BSKY_MAX_LINK_TITLE_CHARS: usize = 256;
 pub const BSKY_SENSITIVE_LABELS: &[&str] = &["porn", "sexual", "nudity", "graphic-media", "gore"];
 pub const BSKY_HOSTS: &[&str] = &[
     "bsky.app",

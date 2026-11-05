@@ -197,7 +197,13 @@ impl GitFileLink {
 
     fn file_name_from_path(path: &str) -> String {
         let decoded = urlencoding::decode(path).unwrap_or(std::borrow::Cow::Borrowed(path));
-        decoded.rsplit('/').next().unwrap_or(&decoded).to_string()
+        decoded
+            .rsplit('/')
+            .next()
+            .unwrap_or(&decoded)
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect()
     }
 
     pub fn fetch_content(
@@ -280,7 +286,15 @@ impl GitFileLink {
     }
 
     fn get_extension(&self) -> &str {
-        self.file_name.rsplit('.').next().unwrap_or("")
+        let ext = self.file_name.rsplit('.').next().unwrap_or("");
+        if ext
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '_'))
+        {
+            ext
+        } else {
+            ""
+        }
     }
 
     pub fn get_language(&self) -> &str {

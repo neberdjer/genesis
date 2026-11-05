@@ -72,9 +72,9 @@ pub async fn handle_member_leave(
     let message = shared::render_template(
         &settings.message,
         &[
-            ("server_name", &shared::escape_markdown(&guild_name)),
-            ("username", &shared::escape_markdown(&user.name)),
-            ("member_count", &member_count),
+            ("server_name", &guild_name, true),
+            ("username", &user.name, true),
+            ("member_count", &member_count, false),
         ],
     );
 

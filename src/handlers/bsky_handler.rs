@@ -87,10 +87,10 @@ impl BskyPost {
             .unwrap_or("")
             .to_string();
 
-        let sensitive = post
-            .get("labels")
-            .and_then(|l| l.as_array())
+        let sensitive = [post.get("labels"), author_obj.and_then(|a| a.get("labels"))]
             .into_iter()
+            .flatten()
+            .filter_map(|l| l.as_array())
             .flatten()
             .filter_map(|l| l.get("val").and_then(|v| v.as_str()))
             .any(|v| BSKY_SENSITIVE_LABELS.contains(&v));
