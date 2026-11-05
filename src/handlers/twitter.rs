@@ -179,12 +179,13 @@ pub async fn build_container(
 
     let quote_block = match (&post.quote_author, &post.quote_username, &post.quote_text) {
         (Some(quote_author), Some(quote_username), Some(quote_text)) => {
-            let quoted = render_text(quote_text, &post.quote_entities).replace('\n', "\n> ");
-            format!(
-                "\n\n> {}\n> {}",
-                author_line(quote_author, quote_username),
-                shared::truncate_text(&quoted, TWITTER_MAX_QUOTE_CHARS)
-            )
+            let mut block = format!("\n\n> {}", author_line(quote_author, quote_username));
+            let quoted = render_text(quote_text.trim(), &post.quote_entities).replace('\n', "\n> ");
+            if !quoted.is_empty() {
+                block.push_str("\n> ");
+                block.push_str(&shared::truncate_text(&quoted, TWITTER_MAX_QUOTE_CHARS));
+            }
+            block
         }
         _ => String::new(),
     };
