@@ -17,10 +17,12 @@ pub async fn build_container(
     serenity::CreateContainer<'static>,
 ) {
     let mut gallery = MediaGallery::default();
-    for (i, media_url) in post.media.iter().enumerate() {
-        let filename = shared::media_filename("tiktok", i, media_url, None);
-        gallery.add(media_url, TIKTOK_DOWNLOAD_UA, filename).await;
-    }
+    let items: Vec<_> = post
+        .media
+        .iter()
+        .map(|url| (url.as_str(), TIKTOK_DOWNLOAD_UA, None))
+        .collect();
+    gallery.add_all("tiktok", &items).await;
 
     shared::post_container(
         shared::author_header(&post.author, &post.username),

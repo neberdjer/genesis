@@ -15,6 +15,18 @@ pub struct BskyMedia {
     pub is_video: bool,
 }
 
+pub enum BskyFacet {
+    Link(String),
+    Mention(String),
+    Tag(String),
+}
+
+pub struct BskySpan {
+    pub start: usize,
+    pub end: usize,
+    pub facet: BskyFacet,
+}
+
 pub struct BskyPost {
     pub author: String,
     pub handle: String,
@@ -23,6 +35,9 @@ pub struct BskyPost {
     pub external: Option<(String, String)>,
     pub quote_author: Option<String>,
     pub quote_text: Option<String>,
+    pub quote_spans: Vec<BskySpan>,
+    pub spans: Vec<BskySpan>,
+    pub created_at: Option<i64>,
     pub sensitive: bool,
 }
 
@@ -80,12 +95,17 @@ impl BskyPost {
             .and_then(|d| d.as_str())
             .unwrap_or("");
 
-        let text = post
-            .get("record")
+        let record = post.get("record");
+        let text = record
             .and_then(|r| r.get("text"))
             .and_then(|t| t.as_str())
             .unwrap_or("")
             .to_string();
+        let spans = Self::spans(record);
+        let created_at = record
+            .and_then(|r| r.get("createdAt"))
+            .and_then(|c| c.as_str())
+            .and_then(super::shared::parse_timestamp);
 
         let sensitive = [post.get("labels"), author_obj.and_then(|a| a.get("labels"))]
             .into_iter()
@@ -97,7 +117,7 @@ impl BskyPost {
 
         let embed = post.get("embed");
         let (media, external) = Self::parse_embed(embed, did);
-        let (quote_author, quote_text) = Self::parse_quote(embed);
+        let (quote_author, quote_text, quote_spans) = Self::parse_quote(embed);
 
         Ok(Self {
             author,
@@ -107,8 +127,38 @@ impl BskyPost {
             external,
             quote_author,
             quote_text,
+            quote_spans,
+            spans,
+            created_at,
             sensitive,
         })
+    }
+
+    fn spans(record: Option<&Value>) -> Vec<BskySpan> {
+        let facets = record
+            .and_then(|r| r.get("facets"))
+            .and_then(|f| f.as_array())
+            .into_iter()
+            .flatten();
+        let mut spans: Vec<BskySpan> = facets
+            .filter_map(|facet| {
+                let index = facet.get("index")?;
+                let start = index.get("byteStart")?.as_u64()? as usize;
+                let end = index.get("byteEnd")?.as_u64()? as usize;
+                let feature = facet.get("features")?.as_array()?.first()?;
+                let kind = feature.get("$type")?.as_str()?;
+                let field = |key: &str| feature.get(key)?.as_str().map(String::from);
+                let facet = match kind {
+                    "app.bsky.richtext.facet#link" => BskyFacet::Link(field("uri")?),
+                    "app.bsky.richtext.facet#mention" => BskyFacet::Mention(field("did")?),
+                    "app.bsky.richtext.facet#tag" => BskyFacet::Tag(field("tag")?),
+                    _ => return None,
+                };
+                Some(BskySpan { start, end, facet })
+            })
+            .collect();
+        spans.sort_by_key(|span| span.start);
+        spans
     }
 
     fn parse_embed(embed: Option<&Value>, did: &str) -> (Vec<BskyMedia>, Option<(String, String)>) {
@@ -212,9 +262,9 @@ impl BskyPost {
         Some((title, uri))
     }
 
-    fn parse_quote(embed: Option<&Value>) -> (Option<String>, Option<String>) {
+    fn parse_quote(embed: Option<&Value>) -> (Option<String>, Option<String>, Vec<BskySpan>) {
         let Some(embed) = embed else {
-            return (None, None);
+            return Default::default();
         };
         let kind = embed.get("$type").and_then(|t| t.as_str()).unwrap_or("");
         let record = match kind {
@@ -225,7 +275,7 @@ impl BskyPost {
             _ => None,
         };
         let Some(record) = record else {
-            return (None, None);
+            return Default::default();
         };
 
         let qauthor = record
@@ -244,9 +294,9 @@ impl BskyPost {
             .map(|s| s.to_string());
 
         if qauthor.is_none() && qtext.is_none() {
-            (None, None)
+            Default::default()
         } else {
-            (qauthor, qtext)
+            (qauthor, qtext, Self::spans(record.get("value")))
         }
     }
 }

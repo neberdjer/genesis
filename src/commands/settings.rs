@@ -94,11 +94,11 @@ async fn command(
         ctx.send(
             poise::CreateReply::default()
                 .content(format!(
-                    "Unknown command `{}`. Options: {}.",
-                    command,
+                    "Unknown command {}. Options: {}.",
+                    shared::inline_code(&command),
                     TOGGLEABLE_COMMANDS
                         .iter()
-                        .map(|c| format!("`{}`", c))
+                        .map(|c| shared::inline_code(c))
                         .collect::<Vec<_>>()
                         .join(", ")
                 ))
@@ -158,11 +158,11 @@ async fn toggle(
         ctx.send(
             poise::CreateReply::default()
                 .content(format!(
-                    "Unknown service `{}`. Valid options: {}.",
-                    service,
+                    "Unknown service {}. Valid options: {}.",
+                    shared::inline_code(&service),
                     TOGGLEABLE_SERVICES
                         .iter()
-                        .map(|s| format!("`{}`", s))
+                        .map(|s| shared::inline_code(s))
                         .collect::<Vec<_>>()
                         .join(", ")
                 ))
@@ -198,7 +198,7 @@ async fn block_domain(
 
     let normalized = normalize_domain(&domain);
     let shown = shared::escape_markdown(&normalized);
-    if normalized.is_empty() || !normalized.contains('.') {
+    if !shared::is_valid_domain(&normalized) {
         ctx.say("Invalid domain. Provide something like `tiktok.com`.")
             .await?;
         return Ok(());

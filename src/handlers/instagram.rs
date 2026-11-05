@@ -40,14 +40,15 @@ pub async fn build_container(
         (false, true) => format!("**{}**", shared::escape_markdown(&post.author)),
         _ => shared::author_header(&post.author, &post.username),
     };
+    let header = shared::with_timestamp(header, post.created_at);
 
+    let items: Vec<_> = post
+        .media
+        .iter()
+        .map(|url| (url.as_str(), ua_for_media_url(url), None))
+        .collect();
     let mut gallery = MediaGallery::default();
-    for (i, media_url) in post.media.iter().enumerate() {
-        let filename = shared::media_filename("instagram", i, media_url, None);
-        gallery
-            .add(media_url, ua_for_media_url(media_url), filename)
-            .await;
-    }
+    gallery.add_all("instagram", &items).await;
 
     shared::post_container(
         header,

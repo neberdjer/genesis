@@ -9,12 +9,6 @@ use tracing::debug;
 
 static TWITTER_PATTERN: OnceLock<Regex> = OnceLock::new();
 
-fn parse_timestamp(value: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|t| t.timestamp())
-}
-
 #[derive(Debug)]
 pub enum TwitterError {
     Deleted,
@@ -169,7 +163,8 @@ impl TwitterPost {
         let quoted = item.get("quoted_tweet");
         let entities = Self::entities(item);
         let quote_entities = quoted.map(Self::entities).unwrap_or_default();
-        let created_at = Self::str_field(item, "created_at").and_then(parse_timestamp);
+        let created_at =
+            Self::str_field(item, "created_at").and_then(super::shared::parse_timestamp);
         let sensitive = Self::is_sensitive(item) || quoted.is_some_and(Self::is_sensitive);
         let poll = Self::poll(item);
 
@@ -324,7 +319,7 @@ impl TwitterPost {
         }
         Some(TwitterPoll {
             choices,
-            ends_at: string("end_datetime_utc").and_then(parse_timestamp),
+            ends_at: string("end_datetime_utc").and_then(super::shared::parse_timestamp),
             is_final: Self::card_binding(item, "counts_are_final", "boolean_value")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),

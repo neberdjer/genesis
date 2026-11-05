@@ -9,9 +9,9 @@ pub async fn goodbye(
     ctx: Context<'_>,
     #[description = "Enable or disable goodbye messages"] enabled: Option<bool>,
     #[description = "Channel to send goodbye messages to"] channel: Option<serenity::GuildChannel>,
-    #[description = "Message template ({server_name}, {username}, {member_count})"] message: Option<
-        String,
-    >,
+    #[description = "Message template ({server_name}, {username}, {member_count})"]
+    #[max_length = 1500]
+    message: Option<String>,
 ) -> Result<(), Error> {
     let guild_id = ctx
         .guild_id()

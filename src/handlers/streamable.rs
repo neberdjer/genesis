@@ -25,9 +25,11 @@ pub async fn build_container(
     let mut gallery = MediaGallery::default();
     match &post.media {
         Media::Attach(video_url) => {
-            let filename = shared::media_filename("streamable", 0, video_url, Some("mp4"));
             gallery
-                .add(video_url, STREAMABLE_DOWNLOAD_UA, filename)
+                .add_all(
+                    "streamable",
+                    &[(video_url, STREAMABLE_DOWNLOAD_UA, Some("mp4"))],
+                )
                 .await;
         }
         Media::Stream(video_url) => gallery.link(video_url),

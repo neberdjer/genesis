@@ -1,4 +1,4 @@
-use super::bsky_handler::{self, BskyPost};
+use super::bsky_handler::{self, BskyFacet, BskyPost, BskySpan};
 use super::shared::{self, MediaGallery, SettingCheck};
 use crate::constants::{
     BSKY_ACCENT_COLOR, BSKY_DOWNLOAD_UA, BSKY_MAX_LINK_TITLE_CHARS, FAILURE_FETCH,
@@ -7,6 +7,46 @@ use poise::serenity_prelude as serenity;
 use sqlx::PgPool;
 use std::fmt::Write as _;
 use tracing::{debug, warn};
+
+fn render_text(text: &str, spans: &[BskySpan]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for span in spans {
+        if span.start < last
+            || span.start >= span.end
+            || span.end > text.len()
+            || !text.is_char_boundary(span.start)
+            || !text.is_char_boundary(span.end)
+        {
+            continue;
+        }
+        let label: String = text[span.start..span.end]
+            .chars()
+            .filter(|c| !matches!(c, '[' | ']' | '`'))
+            .collect();
+        let url = match &span.facet {
+            BskyFacet::Link(uri) if uri.starts_with("http") => uri.clone(),
+            BskyFacet::Link(_) => continue,
+            BskyFacet::Mention(did) => format!("https://bsky.app/profile/{}", did),
+            BskyFacet::Tag(tag) => {
+                format!("https://bsky.app/hashtag/{}", urlencoding::encode(tag))
+            }
+        };
+        if label.trim().is_empty() {
+            continue;
+        }
+        out.push_str(&shared::escape_text(&text[last..span.start]));
+        let _ = write!(
+            out,
+            "[{}](<{}>)",
+            label,
+            url.replace('>', "%3E").replace(' ', "%20")
+        );
+        last = span.end;
+    }
+    out.push_str(&shared::escape_text(&text[last..]));
+    out
+}
 
 fn is_bsky_url(word: &str) -> bool {
     bsky_handler::matches_bsky_host(word) && word.contains("/post/")
@@ -30,7 +70,7 @@ pub async fn build_container(
         );
     }
     if let Some(quote_author) = &post.quote_author {
-        let quote = shared::escape_text(post.quote_text.as_deref().unwrap_or(""));
+        let quote = render_text(post.quote_text.as_deref().unwrap_or(""), &post.quote_spans);
         let _ = write!(
             trailer,
             "\n\n> **{}**\n> {}",
@@ -39,16 +79,26 @@ pub async fn build_container(
         );
     }
 
+    let items: Vec<_> = post
+        .media
+        .iter()
+        .map(|item| {
+            (
+                item.url.as_str(),
+                BSKY_DOWNLOAD_UA,
+                item.is_video.then_some("mp4"),
+            )
+        })
+        .collect();
     let mut gallery = MediaGallery::default().spoiler(post.sensitive);
-    for (i, item) in post.media.iter().enumerate() {
-        let ext = item.is_video.then_some("mp4");
-        let filename = shared::media_filename("bsky", i, &item.url, ext);
-        gallery.add(&item.url, BSKY_DOWNLOAD_UA, filename).await;
-    }
+    gallery.add_all("bsky", &items).await;
 
     shared::post_container(
-        shared::author_header(&post.author, &post.handle),
-        &shared::escape_text(&post.text),
+        shared::with_timestamp(
+            shared::author_header(&post.author, &post.handle),
+            post.created_at,
+        ),
+        &render_text(&post.text, &post.spans),
         &trailer,
         gallery,
         user_id,

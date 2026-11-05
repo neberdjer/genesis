@@ -165,10 +165,8 @@ pub async fn build_container(
     Vec<serenity::CreateAttachment<'static>>,
     serenity::CreateContainer<'static>,
 ) {
-    let mut header = author_line(&post.author, &post.username);
-    if let Some(created_at) = post.created_at {
-        let _ = write!(header, " · <t:{}:R>", created_at);
-    }
+    let mut header =
+        shared::with_timestamp(author_line(&post.author, &post.username), post.created_at);
     if !post.replying_to.is_empty() {
         let names = post
             .replying_to
@@ -193,8 +191,14 @@ pub async fn build_container(
     let trailer = post.poll.as_ref().map(poll_block).unwrap_or_default() + &quote_block;
 
     let mut gallery = MediaGallery::default().spoiler(post.sensitive);
-    for (i, item) in post.media.iter().enumerate() {
-        let Some(data) = gallery.fetch(&item.url, TWITTER_DOWNLOAD_UA).await else {
+    let requests: Vec<(&str, &str)> = post
+        .media
+        .iter()
+        .map(|item| (item.url.as_str(), TWITTER_DOWNLOAD_UA))
+        .collect();
+    let downloads = gallery.download_all(&requests).await;
+    for (i, (item, download)) in post.media.iter().zip(downloads).enumerate() {
+        let Some(data) = gallery.accept(&item.url, download) else {
             continue;
         };
         let (data, ext) = if item.is_gif {

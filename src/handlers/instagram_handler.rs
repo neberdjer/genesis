@@ -26,6 +26,7 @@ pub struct InstagramPost {
     pub username: String,
     pub text: String,
     pub media: Vec<String>,
+    pub created_at: Option<i64>,
 }
 
 struct AnonTokens {
@@ -628,6 +629,7 @@ impl InstagramPost {
             username,
             text: caption,
             media,
+            created_at: None,
         })
     }
 
@@ -715,11 +717,17 @@ impl InstagramPost {
             .into());
         }
 
+        let created_at = item
+            .get("taken_at_timestamp")
+            .or_else(|| item.get("taken_at"))
+            .and_then(|t| t.as_i64());
+
         Ok(Self {
             author: username.clone(),
             username,
             text: caption,
             media,
+            created_at,
         })
     }
 
@@ -785,6 +793,7 @@ impl InstagramPost {
             username,
             text: caption,
             media,
+            created_at: item.get("taken_at").and_then(|t| t.as_i64()),
         })
     }
 

@@ -447,39 +447,31 @@ pub fn media_filename(prefix: &str, index: usize, url: &str, ext_override: Optio
     format!("{}_{}.{}", prefix, index, ext)
 }
 
-enum MediaDownload {
+pub enum MediaDownload {
     Data(Vec<u8>),
     TooLarge,
+    Failed,
 }
 
-async fn download_media_capped(
-    url: &str,
-    user_agent: &str,
-    max_bytes: usize,
-) -> Option<MediaDownload> {
-    let url = url.to_string();
-    let user_agent = user_agent.to_string();
-    tokio::task::spawn_blocking(move || {
-        let response = ureq::get(&url).set("User-Agent", &user_agent).call().ok()?;
-        let declared = response
-            .header("Content-Length")
-            .and_then(|len| len.parse::<usize>().ok());
-        if declared.is_some_and(|len| len > max_bytes) {
-            return Some(MediaDownload::TooLarge);
-        }
-        let mut bytes = Vec::new();
-        response
-            .into_reader()
-            .take((max_bytes as u64).saturating_add(1))
-            .read_to_end(&mut bytes)
-            .ok()?;
-        if bytes.len() > max_bytes {
-            return Some(MediaDownload::TooLarge);
-        }
-        Some(MediaDownload::Data(bytes))
-    })
-    .await
-    .ok()?
+fn open_media(url: &str, user_agent: &str) -> Option<(ureq::Response, Option<usize>)> {
+    let response = ureq::get(url).set("User-Agent", user_agent).call().ok()?;
+    let declared = response
+        .header("Content-Length")
+        .and_then(|len| len.parse::<usize>().ok());
+    Some((response, declared))
+}
+
+fn read_media(response: ureq::Response, max_bytes: usize) -> MediaDownload {
+    let mut bytes = Vec::with_capacity(max_bytes.min(DISCORD_MAX_UPLOAD_BYTES));
+    let read = response
+        .into_reader()
+        .take((max_bytes as u64).saturating_add(1))
+        .read_to_end(&mut bytes);
+    match read {
+        Err(_) => MediaDownload::Failed,
+        Ok(_) if bytes.len() > max_bytes => MediaDownload::TooLarge,
+        Ok(_) => MediaDownload::Data(bytes),
+    }
 }
 
 pub struct MediaGallery {
@@ -505,30 +497,67 @@ impl MediaGallery {
         self.remaining
     }
 
-    pub async fn fetch(&mut self, url: &str, user_agent: &str) -> Option<Vec<u8>> {
+    pub async fn download_all(&self, requests: &[(&str, &str)]) -> Vec<MediaDownload> {
+        let slots = DISCORD_MAX_GALLERY_ITEMS.saturating_sub(self.items.len());
+        let opens: Vec<_> = requests
+            .iter()
+            .take(slots)
+            .map(|(url, user_agent)| {
+                let (url, user_agent) = (url.to_string(), user_agent.to_string());
+                tokio::task::spawn_blocking(move || open_media(&url, &user_agent))
+            })
+            .collect();
+
+        let mut budget = self.remaining;
+        let mut reads = Vec::with_capacity(opens.len());
+        for open in opens {
+            reads.push(match open.await.ok().flatten() {
+                None => Err(MediaDownload::Failed),
+                Some((_, Some(len))) if len > budget => Err(MediaDownload::TooLarge),
+                Some((response, declared)) => {
+                    let cap = declared.unwrap_or(budget);
+                    budget -= cap;
+                    Ok(tokio::task::spawn_blocking(move || {
+                        read_media(response, cap)
+                    }))
+                }
+            });
+        }
+
+        let mut downloads = Vec::with_capacity(reads.len());
+        for read in reads {
+            downloads.push(match read {
+                Ok(handle) => handle.await.unwrap_or(MediaDownload::Failed),
+                Err(download) => download,
+            });
+        }
+        downloads
+    }
+
+    pub fn accept(&mut self, url: &str, download: MediaDownload) -> Option<Vec<u8>> {
         if self.items.len() >= DISCORD_MAX_GALLERY_ITEMS {
             return None;
         }
-        if self.remaining == 0 {
-            self.link(url);
-            return None;
-        }
-        match download_media_capped(url, user_agent, self.remaining).await {
-            Some(MediaDownload::Data(data)) => Some(data),
-            Some(MediaDownload::TooLarge) => {
+        match download {
+            MediaDownload::Data(data) if data.len() <= self.remaining => Some(data),
+            MediaDownload::Data(_) | MediaDownload::TooLarge => {
                 self.link(url);
                 None
             }
-            None => {
+            MediaDownload::Failed => {
                 warn!("Failed to download media: {}", url);
                 None
             }
         }
     }
 
-    pub async fn add(&mut self, url: &str, user_agent: &str, filename: String) {
-        if let Some(data) = self.fetch(url, user_agent).await {
-            self.attach(data, filename);
+    pub async fn add_all(&mut self, prefix: &str, items: &[(&str, &str, Option<&str>)]) {
+        let requests: Vec<(&str, &str)> = items.iter().map(|(url, ua, _)| (*url, *ua)).collect();
+        let downloads = self.download_all(&requests).await;
+        for (i, ((url, _, ext), download)) in items.iter().zip(downloads).enumerate() {
+            if let Some(data) = self.accept(url, download) {
+                self.attach(data, media_filename(prefix, i, url, *ext));
+            }
         }
     }
 
@@ -629,6 +658,23 @@ pub fn author_header(author: &str, handle: &str) -> String {
 }
 
 const SENT_BY_PREFIX: &str = "-# Sent by <@";
+
+pub fn parse_timestamp(value: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|t| t.timestamp())
+}
+
+pub fn with_timestamp(header: String, created_at: Option<i64>) -> String {
+    match created_at {
+        Some(created_at) => format!("{header} · <t:{created_at}:R>"),
+        None => header,
+    }
+}
+
+pub fn inline_code(text: &str) -> String {
+    format!("`{}`", text.replace('`', "'"))
+}
 
 pub fn sent_by_footer(user_id: serenity::UserId) -> String {
     format!("{SENT_BY_PREFIX}{user_id}>")
@@ -740,12 +786,13 @@ pub fn truncate_text(text: &str, max: usize) -> String {
 
     let head = &text[..cut];
     let head = if text[cut..].starts_with(char::is_whitespace) {
-        head.trim_end()
+        head
     } else if let Some(i) = head.rfind(char::is_whitespace).filter(|&i| i > 0) {
-        head[..i].trim_end()
+        &head[..i]
     } else {
-        strip_open_link(head).trim_end_matches('\\')
+        head.trim_end_matches('\\')
     };
+    let head = strip_open_link(head).trim_end();
     let head = head.strip_suffix("\n>").unwrap_or(head);
     format!("{}…", head)
 }
@@ -821,6 +868,13 @@ pub fn floor_char_boundary(text: &str, mut index: usize) -> usize {
         index -= 1;
     }
     index
+}
+
+pub fn is_valid_domain(domain: &str) -> bool {
+    domain.contains('.')
+        && domain
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
 }
 
 pub fn normalize_domain(domain: &str) -> String {
